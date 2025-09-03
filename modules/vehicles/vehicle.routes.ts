@@ -3,6 +3,11 @@ import * as ctrl from './vehicle.controller';
 
 const router = Router();
 
+// Specific routes first to avoid being captured by ":id"
+router.get('/groups/list', ctrl.listByGroup);
+router.get('/groups', ctrl.groups);
+
+// Standard CRUD
 router.get('/', ctrl.list);
 router.get('/:id', ctrl.get);
 router.post('/', ctrl.create);
