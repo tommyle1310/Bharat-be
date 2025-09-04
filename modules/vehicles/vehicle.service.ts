@@ -29,8 +29,8 @@ export async function groups(): Promise<VehicleGroupItem[]> {
   return dao.getGroups();
 }
 
-export async function listByGroup(type: 'state' | 'auction_status', id: number, limit?: number, offset?: number): Promise<VehicleListItem[]> {
-  return dao.getVehiclesByGroup(type, id, limit, offset);
+export async function listByGroup(type: 'state' | 'auction_status', title: string, limit?: number, offset?: number): Promise<VehicleListItem[]> {
+  return dao.getVehiclesByGroup(type, title, limit, offset);
 }
 
 

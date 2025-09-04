@@ -1,4 +1,4 @@
-Write-Host "🛑 Stopping Redis & MySQL containers..."
+Write-Host "===Stopping Redis & MySQL containers..."
 
 # Danh sách container cần stop
 $containers = "redis-local","mysql-local"
@@ -9,10 +9,10 @@ foreach ($c in $containers) {
     if ($running) {
         docker stop $c
         docker rm $c
-        Write-Host "[OK] Stopped and removed container $c"
+        Write-Host "===Stopped and removed container $c"
     } else {
-        Write-Host "[INFO] Container $c is not running"
+        Write-Host "===Container $c is not running"
     }
 }
 
-Write-Host "[DONE] All containers processed"
+Write-Host "===All containers processed"

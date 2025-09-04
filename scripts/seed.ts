@@ -226,8 +226,8 @@ async function seedVehicles(
         full ? 'A' : 'B',
         `REG-${1000 + i}`,
         full ? '2015' : Math.floor(Math.random() * 20) + 2000,
-        1,
-        1,
+        Math.floor(Math.random() * 36) ,
+        Math.floor(Math.random() * 9) ,
         full ? 100000 + i * 1000 : null,
         full ? 120000 + i * 1000 : null,
         full ? 50000 + (i * 10000) : null,
@@ -246,8 +246,8 @@ async function seedStaff(conn: Connection) {
   for (let i = 1; i <= 5; i++) {
     const full = i <= 2;
     const name = `Staff ${i}`;
-    const phone = full ? `+10000000${1000 + i}` : null;
-    const email = full ? `staff${i}@example.com` : null;
+    const phone =  `+10000000${1000 + i}` ;
+    const email = `staff${i}@example.com` ;
     await conn.execute('INSERT INTO `staff` (staff, phone, email, added_on, updated_on) VALUES (?, ?, ?, NOW(), NOW())', [name, phone, email]);
   }
 }

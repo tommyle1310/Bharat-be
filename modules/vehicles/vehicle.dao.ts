@@ -66,36 +66,47 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
   const DEFAULT_IMG =
     "https://images.unsplash.com/photo-1517673132405-a56a62b18caf?w=800";
 
-  // States grouped by region
-  const [stateRows] = await db.query<RowDataPacket[]>(
-    `SELECT s.region AS region, COUNT(*) AS total
-     FROM vehicle v
-     INNER JOIN states s ON s.id = v.vehicle_state_id
+  // Define the 4 fixed regions
+  const REGIONS = ["North", "South", "East", "West"];
+
+  // Query vehicle count grouped by region
+  const [regionRows] = await db.query<RowDataPacket[]>(
+    `SELECT s.region AS region, COUNT(v.vehicle_id) AS total
+     FROM states s
+     LEFT JOIN vehicle v ON v.vehicle_state_id = s.id
      WHERE s.region IS NOT NULL
-     GROUP BY s.region
-     ORDER BY s.region`
+     GROUP BY s.region`
   );
-  
-  const stateItems: VehicleGroupItem[] = stateRows.map((r, index) => ({
+
+  // Convert query result to a lookup map { region -> total }
+  const regionMap: Record<string, number> = {};
+  for (const r of regionRows) {
+    if (r.region) {
+      regionMap[r.region] = Number(r.total) || 0;
+    }
+  }
+
+  // Always output 4 regions, even if missing in DB
+  const stateItems: VehicleGroupItem[] = REGIONS.map((region, index) => ({
     id: String(index + 1),
     type: "state",
-    title: String(r.region),
-    total_vehicles: String(r.total),
+    title: region,
+    total_vehicles: String(regionMap[region] ?? 0),
     image: DEFAULT_IMG,
   }));
 
   // Auction status via case_options
   const [statusRows] = await db.query<RowDataPacket[]>(
-    `SELECT co.id AS id, co.case_name AS name, COUNT(*) AS total
-     FROM vehicle v
-     INNER JOIN case_options co ON co.id = v.auction_status_id
+    `SELECT co.id AS id, co.case_name AS name, COUNT(v.vehicle_id) AS total
+     FROM case_options co
+     LEFT JOIN vehicle v ON v.auction_status_id = co.id
      GROUP BY co.id, co.case_name
      ORDER BY co.id`
   );
 
   const statusItems: VehicleGroupItem[] = statusRows.map((r) => ({
     id: String(r.id),
-    type: "auction_status", // Fixed typo: was "aunction_status"
+    type: "auction_status",
     title: String(r.name),
     total_vehicles: String(r.total),
     image: DEFAULT_IMG,
@@ -103,6 +114,7 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
 
   return [...stateItems, ...statusItems];
 }
+
 
 export interface VehicleListItem {
   vehicle_id: string;
@@ -128,29 +140,37 @@ export interface VehicleListItem {
 
 export async function getVehiclesByGroup(
   type: "state" | "auction_status",
-  id: number,
+  title: string,
   limit = 50,
   offset = 0
 ): Promise<VehicleListItem[]> {
   const db: Pool = getDb();
+
   const DEFAULT_IMG =
     "https://images.unsplash.com/photo-1517673132405-a56a62b18caf?w=800";
   const MANAGER_IMG =
     "https://images.unsplash.com/photo-1519211975560-4ca611f5a72a?w=800";
 
   // sanitize inputs
-  const safeId = Number.isInteger(Number(id)) ? Number(id) : 0;
-  const safeLimit = Math.max(0, parseInt(String(limit), 10) || 50);
+  const safeTitle = String(title || "").trim();
+  const safeLimit = Math.max(1, parseInt(String(limit), 10) || 50);
   const safeOffset = Math.max(0, parseInt(String(offset), 10) || 0);
 
-  // build where clause (we won't push params yet; we'll construct `params` in SQL-order)
   let where = "";
+  let join = "";
+
   if (type === "auction_status") {
-    where = "v.auction_status_id = ?";
+    join = `
+      LEFT JOIN case_options co ON co.id = v.auction_status_id
+      LEFT JOIN states s ON s.id = v.vehicle_state_id
+    `;
+    where = "LOWER(TRIM(co.case_name)) = LOWER(?)";
   } else if (type === "state") {
-    where = "v.vehicle_state_id = ?";
-  } else {
-    return [];
+    join = `
+      LEFT JOIN states s ON s.id = v.vehicle_state_id
+      LEFT JOIN case_options co ON co.id = v.auction_status_id
+    `;
+    where = "LOWER(TRIM(s.region)) = LOWER(?)";
   }
 
   const sql = `
@@ -175,26 +195,22 @@ export async function getVehiclesByGroup(
       ? AS main_image
     FROM vehicle v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
-    LEFT JOIN states s ON s.id = v.vehicle_state_id
     LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
     LEFT JOIN vehicle_make mk ON mk.id = v.vehicle_make_id
     LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
-    LEFT JOIN case_options co ON co.id = v.auction_status_id
+    ${join}
     LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
     WHERE ${where}
     ORDER BY v.added_on DESC
     LIMIT ? OFFSET ?
   `;
 
-  // IMPORTANT: params order must follow the order of ? in SQL above:
-  // 1) manager_image, 2) main_image, 3) where id, 4) limit, 5) offset
-  const params = [MANAGER_IMG, DEFAULT_IMG, safeId, safeLimit, safeOffset];
+  // Đặt param đúng thứ tự với SQL
+  const params = [MANAGER_IMG, DEFAULT_IMG, safeTitle, safeLimit, safeOffset];
 
-  console.log("SQL params:", params, "limit:", safeLimit, "offset:", safeOffset);
   const [rows] = await db.query<RowDataPacket[]>(sql, params);
 
-  
-  const result = rows.map((r) => ({
+  return rows.map((r) => ({
     vehicle_id: String(r.vehicle_id),
     end_time: r.end_time ? new Date(r.end_time).toISOString() : null,
     odometer: r.odometer != null ? String(r.odometer) : null,
@@ -214,12 +230,12 @@ export async function getVehiclesByGroup(
     manager_email: r.manager_email ?? null,
     manager_image: r.manager_image ?? DEFAULT_IMG,
     manager_id: r.manager_id != null ? String(r.manager_id) : null,
-  }))
-  console.log("Result:", result[0]);
-  return result;
+  }));
 }
 
-export async function getVehicleDetails(vehicleId: number): Promise<VehicleListItem | null> {
+export async function getVehicleDetails(
+  vehicleId: number
+): Promise<VehicleListItem | null> {
   const db: Pool = getDb();
   const DEFAULT_IMG =
     "https://images.unsplash.com/photo-1517673132405-a56a62b18caf?w=800";

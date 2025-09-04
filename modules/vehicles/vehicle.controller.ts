@@ -50,13 +50,13 @@ export async function listByGroup(req: Request, res: Response) {
     type = 'auction_status';
   }
   
-  const id = Number(req.query.id);
+  const title = String(req.query.title);
   const limit = Number(req.query.limit ?? 50);
   const offset = Number(req.query.offset ?? 0);
-  console.log('check', type, id, limit, offset);
+  console.log('check', type, title, limit, offset);
   
-  if (!type || Number.isNaN(id)) {
-    return res.status(400).json({ message: 'type and id query params are required' });
+  if (!type || !(title)) {
+    return res.status(400).json({ message: 'type and title query params are required' });
   }
   
   // Validate type is one of the allowed values
@@ -64,7 +64,7 @@ export async function listByGroup(req: Request, res: Response) {
     return res.status(400).json({ message: 'Invalid type. Must be "state" or "auction_status"' });
   }
   
-  const data = await service.listByGroup(type as 'state' | 'auction_status', id, limit, offset);
+  const data = await service.listByGroup(type as 'state' | 'auction_status', title, limit, offset);
   res.json(data);
 }
 
