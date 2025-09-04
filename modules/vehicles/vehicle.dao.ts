@@ -60,28 +60,29 @@ export interface VehicleGroupItem {
   image: string;
 }
 
-export async function getGroups(): Promise<VehicleGroupItem[]> {
+export async function getGroups(): Promise<VehicleGroupItem[]> { 
   const db: Pool = getDb();
 
   const DEFAULT_IMG =
     "https://images.unsplash.com/photo-1517673132405-a56a62b18caf?w=800";
 
   const REGIONS = ["North", "South", "East", "West"];
+  const now = new Date();
 
-  // Count per region
+  // Count per region, only vehicles with auction_end_dttm > now
   const [regionRows] = await db.query<RowDataPacket[]>(
     `SELECT s.region AS region, COUNT(v.vehicle_id) AS total
      FROM states s
-     LEFT JOIN vehicle v ON v.vehicle_state_id = s.id
+     LEFT JOIN vehicle v 
+       ON v.vehicle_state_id = s.id 
+      AND v.auction_end_dttm > NOW()
      WHERE s.region IS NOT NULL
      GROUP BY s.region`
   );
 
   const regionMap: Record<string, number> = {};
   for (const r of regionRows) {
-    if (r.region) {
-      regionMap[r.region] = Number(r.total) || 0;
-    }
+    if (r.region) regionMap[r.region] = Number(r.total) || 0;
   }
 
   const stateItems: VehicleGroupItem[] = REGIONS.map((region, index) => ({
@@ -92,11 +93,13 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
     image: DEFAULT_IMG,
   }));
 
-  // Auction status via case_options
+  // Auction status via case_options, only auction_end_dttm > now
   const [statusRows] = await db.query<RowDataPacket[]>(
     `SELECT co.id AS id, co.case_name AS name, COUNT(v.vehicle_id) AS total
      FROM case_options co
-     LEFT JOIN vehicle v ON v.auction_status_id = co.id
+     LEFT JOIN vehicle v 
+       ON v.auction_status_id = co.id 
+      AND v.auction_end_dttm > NOW()
      GROUP BY co.id, co.case_name
      ORDER BY co.id`
   );
@@ -109,9 +112,9 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
     image: DEFAULT_IMG,
   }));
 
-  // query tổng số xe
+  // Tổng số xe chưa hết hạn
   const [allRows] = await db.query<RowDataPacket[]>(
-    `SELECT COUNT(*) AS total_all FROM vehicle`
+    `SELECT COUNT(*) AS total_all FROM vehicle WHERE auction_end_dttm > NOW()`
   );
 
   const total_all = allRows?.[0]?.total_all ?? 0;
@@ -126,6 +129,7 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
 
   return [...stateItems, ...statusItems, allItem];
 }
+
 
 export interface VehicleListItem {
   vehicle_id: string;
@@ -175,19 +179,19 @@ export async function getVehiclesByGroup(
       LEFT JOIN case_options co ON co.id = v.auction_status_id
       LEFT JOIN states s ON s.id = v.vehicle_state_id
     `;
-    where = "LOWER(TRIM(co.case_name)) = LOWER(?)";
+    where = "LOWER(TRIM(co.case_name)) = LOWER(?) AND v.auction_end_dttm > NOW()";
   } else if (type === "state") {
     join = `
       LEFT JOIN states s ON s.id = v.vehicle_state_id
       LEFT JOIN case_options co ON co.id = v.auction_status_id
     `;
-    where = "LOWER(TRIM(s.region)) = LOWER(?)";
+    where = "LOWER(TRIM(s.region)) = LOWER(?) AND v.auction_end_dttm > NOW()";
   } else if (type === "all") {
     join = `
       LEFT JOIN states s ON s.id = v.vehicle_state_id
       LEFT JOIN case_options co ON co.id = v.auction_status_id
     `;
-    where = "1 = 1";
+    where = "v.auction_end_dttm > NOW()";
   } 
 
   const sql = `
@@ -217,13 +221,18 @@ export async function getVehiclesByGroup(
     LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
     ${join}
     LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
-    WHERE ${where}
+    WHERE ${where} AND v.auction_end_dttm > NOW()
     ORDER BY v.added_on DESC
     LIMIT ? OFFSET ?
   `;
 
-  // Đặt param đúng thứ tự với SQL
-  const params = [MANAGER_IMG, DEFAULT_IMG, safeTitle, safeLimit, safeOffset];
+  let params: any[];
+
+  if (type === "all") {
+    params = [MANAGER_IMG, DEFAULT_IMG, safeLimit, safeOffset]; 
+  } else {
+    params = [MANAGER_IMG, DEFAULT_IMG, safeTitle, safeLimit, safeOffset];
+  }
 
   const [rows] = await db.query<RowDataPacket[]>(sql, params);
 

@@ -60,11 +60,11 @@ export async function listByGroup(req: Request, res: Response) {
   }
   
   // Validate type is one of the allowed values
-  if (type !== 'state' && type !== 'auction_status') {
-    return res.status(400).json({ message: 'Invalid type. Must be "state" or "auction_status"' });
+  if (!['state', 'auction_status', 'all'].includes(type)) {
+    throw new Error('Invalid type. Must be "state", "auction_status", or "all"');
   }
-  
-  const data = await service.listByGroup(type as 'state' | 'auction_status', title, limit, offset);
+
+  const data = await service.listByGroup(type as 'state' | 'auction_status' | 'all', title, limit, offset);
   res.json(data);
 }
 
