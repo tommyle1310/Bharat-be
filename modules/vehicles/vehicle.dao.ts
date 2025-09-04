@@ -2,7 +2,7 @@ import { Pool, RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { getDb } from "../../config/database";
 import { Vehicle } from "./vehicle.model";
 
-const TABLE = "vehicle";
+const TABLE = "vehicles";
 
 export async function listVehicles(limit = 50, offset = 0): Promise<Vehicle[]> {
   const db: Pool = getDb();
@@ -73,7 +73,7 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
   const [regionRows] = await db.query<RowDataPacket[]>(
     `SELECT s.region AS region, COUNT(v.vehicle_id) AS total
      FROM states s
-     LEFT JOIN vehicle v 
+     LEFT JOIN vehicles v 
        ON v.vehicle_state_id = s.id 
       AND v.auction_end_dttm > NOW()
      WHERE s.region IS NOT NULL
@@ -97,7 +97,7 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
   const [statusRows] = await db.query<RowDataPacket[]>(
     `SELECT co.id AS id, co.case_name AS name, COUNT(v.vehicle_id) AS total
      FROM case_options co
-     LEFT JOIN vehicle v 
+     LEFT JOIN vehicles v 
        ON v.auction_status_id = co.id 
       AND v.auction_end_dttm > NOW()
      GROUP BY co.id, co.case_name
@@ -114,7 +114,7 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
 
   // Tổng số xe chưa hết hạn
   const [allRows] = await db.query<RowDataPacket[]>(
-    `SELECT COUNT(*) AS total_all FROM vehicle WHERE auction_end_dttm > NOW()`
+    `SELECT COUNT(*) AS total_all FROM vehicles WHERE auction_end_dttm > NOW()`
   );
 
   const total_all = allRows?.[0]?.total_all ?? 0;
@@ -128,6 +128,66 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
   };
 
   return [...stateItems, ...statusItems, allItem];
+}
+
+export interface VehicleItem {
+  vehicle_id: number;
+  regs_no: string | null;
+  manufacturing_year: string | null;
+  base_price: number | null;
+  max_price: number | null;
+  vehicle_location: string | null;
+  vehicle_make: string | null;
+  vehicle_model: string | null;
+  vehicle_variant: string | null;
+  fuel_type: string | null;
+  staff_name: string | null;
+  staff_phone: string | null;
+}
+
+
+
+export async function searchVehicles(keyword: string, limit = 50, offset = 0): Promise<VehicleItem[]> {
+  const db: Pool = getDb();
+
+  const likeKeyword = `%${keyword}%`;
+
+  const [rows] = await db.query<RowDataPacket[]>(
+    `
+    SELECT 
+      v.vehicle_id,
+      v.regs_no,
+      v.manufacturing_year,
+      v.base_price,
+      v.max_price,
+      v.vehicle_location,
+      vm.make_name AS vehicle_make,
+      vmo.model_name AS vehicle_model,
+      vv.variant_name AS vehicle_variant,
+      ft.fuel_type AS fuel_type,
+      s.staff AS staff_name,
+      s.phone AS staff_phone
+    FROM vehicles v
+    LEFT JOIN vehicle_make vm ON v.vehicle_make_id = vm.vehicle_make_id
+    LEFT JOIN vehicle_model vmo ON v.vehicle_model_id = vmo.vehicle_model_id
+    LEFT JOIN vehicle_variant vv ON v.vehicle_variant_id = vv.vehicle_variant_id
+    LEFT JOIN fuel_type ft ON v.fuel_type_id = ft.fuel_type_id
+    LEFT JOIN staff s ON v.vehicle_manager_id = s.staff_id
+    WHERE 
+      v.manufacturing_year LIKE ?
+      OR vm.make_name LIKE ?
+      OR vmo.model_name LIKE ?
+      OR vv.variant_name LIKE ?
+      OR ft.fuel_type LIKE ?
+      OR s.staff LIKE ?
+      OR s.phone LIKE ?
+    ORDER BY v.added_on DESC
+    LIMIT ? OFFSET ?
+    `,
+    [likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword, limit, offset]
+  );
+
+  return rows as VehicleItem[];
 }
 
 
@@ -201,7 +261,6 @@ export async function getVehiclesByGroup(
       v.odometer_reading AS odometer,
       ft.fuel_type AS fuel,
       v.ownership_serial,
-      s.rto AS state_rto,
       mk.make_name AS make,
       md.model_name AS model,
       vv.variant_name AS variant,
@@ -214,7 +273,7 @@ export async function getVehiclesByGroup(
       st.staff_id AS manager_id,
       ? AS manager_image,
       ? AS main_image
-    FROM vehicle v
+    FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
     LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
     LEFT JOIN vehicle_make mk ON mk.id = v.vehicle_make_id
@@ -275,7 +334,6 @@ export async function getVehicleDetails(
       v.odometer_reading AS odometer,
       ft.fuel_type AS fuel,
       v.ownership_serial,
-      s.rto AS state_rto,
       mk.make_name AS make,
       md.model_name AS model,
       vv.variant_name AS variant,
@@ -292,7 +350,7 @@ export async function getVehicleDetails(
       (
         SELECT CONCAT('https://images.unsplash.com/photo-1517673132405-a56a62b18caf?w=800')
       ) AS main_image
-    FROM vehicle v
+    FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
     LEFT JOIN states s ON s.id = v.vehicle_state_id
     LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id

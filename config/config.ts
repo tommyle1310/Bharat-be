@@ -1,7 +1,8 @@
 import dotenv from 'dotenv';
+import path from 'path';
 
-dotenv.config();
-
+dotenv.config({ path: path.resolve(__dirname, '../.env.development') });
+console.log('check env config', process.env.REDIS_HOST, process.env.REDIS_PORT, process.env.DB_USER, process.env.DB_PASSWORD, process.env.DB_NAME, process.env.DB_CONN_LIMIT);
 export const config = {
   env: process.env.NODE_ENV || 'development',
   host: process.env.HOST || '0.0.0.0',
@@ -24,7 +25,10 @@ export const config = {
     username: process.env.REDIS_USERNAME,
     password: process.env.REDIS_PASSWORD,
     db: Number(process.env.REDIS_DB || 0),
-    tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
+    tls: process.env.REDIS_TLS === 'true' && process.env.REDIS_HOST !== '127.0.0.1'
+    ? {}
+    : undefined
+  
   },
 } as const;
 

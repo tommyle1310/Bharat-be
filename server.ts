@@ -1,3 +1,5 @@
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env' });
 import http from 'http';
 import { createApp } from './app';
 import { initSocket } from './config/socket';

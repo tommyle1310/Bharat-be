@@ -68,4 +68,12 @@ export async function listByGroup(req: Request, res: Response) {
   res.json(data);
 }
 
+export async function search(req: Request, res: Response) {
+  const keyword = String(req.query.keyword);
+  const limit = Number(req.query.limit ?? 50);
+  const offset = Number(req.query.offset ?? 0);
+  const data = await service.searchVehicles(keyword, limit, offset);
+  res.json(data);
+}
+
 

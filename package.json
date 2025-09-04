@@ -13,7 +13,7 @@
     "db:migrate": "ts-node ./scripts/migrate.ts",
     "db:seed": "ts-node ./scripts/seed.ts",
     "db:reset": "ts-node ./scripts/reset-db.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "nodemon --watch ./ --ext ts,js,json --exec ts-node ./server.ts"
   },
   "keywords": [],
   "author": "",
@@ -27,8 +27,8 @@
     "express": "^5.1.0",
     "helmet": "^8.1.0",
     "ioredis": "^5.7.0",
-    "mysql2": "^3.10.0",
     "morgan": "^1.10.1",
+    "mysql2": "^3.10.0",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {

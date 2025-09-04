@@ -16,7 +16,7 @@ async function main() {
 
   const tables = [
     'vehicle_images',
-    'vehicle',
+    'vehicles',
     'vehicle_variant',
     'vehicle_model',
     'vehicle_make',

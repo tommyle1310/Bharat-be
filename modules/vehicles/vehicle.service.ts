@@ -33,4 +33,6 @@ export async function listByGroup(type: 'state' | 'auction_status' | 'all', titl
   return dao.getVehiclesByGroup(type, title, limit, offset);
 }
 
-
+export async function searchVehicles(keyword: string, limit?: number, offset?: number): Promise<dao.VehicleItem[]> {
+  return dao.searchVehicles(keyword, limit, offset);
+}

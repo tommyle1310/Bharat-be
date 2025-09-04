@@ -226,9 +226,34 @@ async function seedVehicles(
     const auctionEnd = randomFutureDate(2, 10); // random 2 giờ -> 10 ngày
 
     const [res] = await conn.execute<ResultSetHeader>(
-      `INSERT INTO vehicle 
-      (vehicle_make_id, vehicle_model_id, vehicle_variant_id, vehicle_image_id, fuel_type_id, vehicle_manager_id, seller_id, business_vertical, regs_no, manufacturing_year, vehicle_state_id, auction_status_id, base_price, expected_price, odometer_reading, color, chasis_no, added_on, updated_on, auction_end_dttm)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?)`,
+      `INSERT INTO vehicles
+        (
+          vehicle_make_id,
+          vehicle_model_id,
+          vehicle_variant_id,
+          vehicle_image_id,
+          fuel_type_id,
+          vehicle_manager_id,
+          seller_id,
+          regs_no,
+          manufacturing_year,
+          vehicle_state_id,
+          auction_status_id,
+          base_price,
+          expected_price,
+          odometer_reading,
+          color,
+          chasis_no,
+          added_on,
+          updated_on,
+          auction_end_dttm,
+          seller_mgr_name,
+          contact_person_name,
+          vehicle_mgr_name,
+          vehicle_mgr_contact_no,
+          vehicle_mgr_email
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?, ?, ?, ?, ?)`,
       [
         makeId,
         modelId,
@@ -237,9 +262,8 @@ async function seedVehicles(
         fuelTypeId,
         vehicleManagerId,
         100 + i,
-        full ? 'A' : 'B',
         `REG-${1000 + i}`,
-        full ? '2015' : Math.floor(Math.random() * 20) + 2000,
+        full ? '2015' : (2000 + Math.floor(Math.random() * 20)).toString(),
         Math.floor(Math.random() * 36),
         Math.floor(Math.random() * 9),
         full ? 100000 + i * 1000 : null,
@@ -247,9 +271,16 @@ async function seedVehicles(
         full ? 50000 + (i * 10000) : null,
         full ? ['White', 'Black', 'Silver', 'Red', 'Blue'][i % 5] : null,
         full ? `CH${100000 + i}` : null,
-        auctionEnd, // <-- dùng auction_end_dttm
+        auctionEnd,
+        `SellerMgr${i}`,       // seller_mgr_name
+        `ContactPerson${i}`,   // contact_person_name
+        `VehicleMgr${i}`,      // vehicle_mgr_name
+        `123456789${i}`,       // vehicle_mgr_contact_no
+        `veh${i}@example.com`  // vehicle_mgr_email
       ]
     );
+    
+    
 
     const vehicleId = (res as ResultSetHeader).insertId;
     await conn.execute(
