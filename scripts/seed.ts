@@ -20,10 +20,22 @@ async function withConnection<T>(fn: (conn: Connection) => Promise<T>): Promise<
   }
 }
 
-async function getMax(conn: Connection, table: string, idCol: string): Promise<number> {
-  const [rows] = await conn.query<any[]>(`SELECT MAX(${idCol}) AS maxId FROM \`${table}\``);
-  const maxId = rows[0]?.maxId as number | null | undefined;
-  return maxId ? Number(maxId) : 0;
+function randomFutureDate(minHours = 2, maxDays = 10): string {
+  const now = new Date();
+  const minMs = minHours * 60 * 60 * 1000; // 2 giờ
+  const maxMs = maxDays * 24 * 60 * 60 * 1000; // 10 ngày
+  const delta = Math.floor(Math.random() * (maxMs - minMs) + minMs);
+  const future = new Date(now.getTime() + delta);
+  
+  // MySQL DATETIME format: 'YYYY-MM-DD HH:MM:SS'
+  const yyyy = future.getFullYear();
+  const mm = String(future.getMonth() + 1).padStart(2, "0");
+  const dd = String(future.getDate()).padStart(2, "0");
+  const hh = String(future.getHours()).padStart(2, "0");
+  const min = String(future.getMinutes()).padStart(2, "0");
+  const ss = String(future.getSeconds()).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
 }
 
 // Helpers to read data files if present
@@ -102,15 +114,14 @@ async function ensureCaseOptions(conn: Connection) {
   type CaseOptionRow = { id: number; case_name: string };
   const rows =
     tryReadJson<CaseOptionRow[]>('case_options.json') || [
-      { id: 1, case_name: 'Accidental' },
-      { id: 2, case_name: 'Luxury' },
-      { id: 3, case_name: 'Theft' },
-      { id: 4, case_name: 'Transit' },
-      { id: 5, case_name: 'Flood' },
-      { id: 6, case_name: 'Commercial' },
-      { id: 7, case_name: 'Fire Loss' },
-      { id: 8, case_name: 'Partial Salvage' },
-      { id: 9, case_name: 'Ready to lift' },
+      { id: 1, case_name: 'Luxury' },
+      { id: 2, case_name: 'Theft' },
+      { id: 3, case_name: 'Transit' },
+      { id: 4, case_name: 'Flood' },
+      { id: 5, case_name: 'Commercial' },
+      { id: 6, case_name: 'Fire Loss' },
+      { id: 7, case_name: 'Partial Salvage' },
+      { id: 8, case_name: 'Ready to lift' },
     ];
   for (const co of rows) {
     await conn.execute(
@@ -192,7 +203,7 @@ async function seedVehicleImages(conn: Connection): Promise<number[]> {
   return imageIds;
 }
 
-async function seedVehicles(
+async function seedVehicles( 
   conn: Connection,
   makeIds: number[],
   modelIds: number[],
@@ -200,7 +211,6 @@ async function seedVehicles(
   imageIds: number[],
   fuelTypeIds: number[],
 ) {
-  // Get staff IDs for vehicle manager assignment
   const [staffRows] = await conn.query<any[]>('SELECT staff_id FROM `staff` ORDER BY staff_id');
   const staffIds = staffRows.map(row => row.staff_id);
   
@@ -212,9 +222,13 @@ async function seedVehicles(
     const imageId = imageIds[i % imageIds.length];
     const fuelTypeId = fuelTypeIds[i % fuelTypeIds.length];
     const vehicleManagerId = staffIds[i % staffIds.length];
-    
+
+    const auctionEnd = randomFutureDate(2, 10); // random 2 giờ -> 10 ngày
+
     const [res] = await conn.execute<ResultSetHeader>(
-      'INSERT INTO `vehicle` (vehicle_make_id, vehicle_model_id, vehicle_variant_id, vehicle_image_id, fuel_type_id, vehicle_manager_id, seller_id, business_vertical, regs_no, manufacturing_year, vehicle_state_id, auction_status_id, base_price, expected_price, odometer_reading, color, chasis_no, added_on, updated_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
+      `INSERT INTO vehicle 
+      (vehicle_make_id, vehicle_model_id, vehicle_variant_id, vehicle_image_id, fuel_type_id, vehicle_manager_id, seller_id, business_vertical, regs_no, manufacturing_year, vehicle_state_id, auction_status_id, base_price, expected_price, odometer_reading, color, chasis_no, added_on, updated_on, auction_end_dttm)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?)`,
       [
         makeId,
         modelId,
@@ -226,19 +240,25 @@ async function seedVehicles(
         full ? 'A' : 'B',
         `REG-${1000 + i}`,
         full ? '2015' : Math.floor(Math.random() * 20) + 2000,
-        Math.floor(Math.random() * 36) ,
-        Math.floor(Math.random() * 9) ,
+        Math.floor(Math.random() * 36),
+        Math.floor(Math.random() * 9),
         full ? 100000 + i * 1000 : null,
         full ? 120000 + i * 1000 : null,
         full ? 50000 + (i * 10000) : null,
         full ? ['White', 'Black', 'Silver', 'Red', 'Blue'][i % 5] : null,
         full ? `CH${100000 + i}` : null,
+        auctionEnd, // <-- dùng auction_end_dttm
       ]
     );
+
     const vehicleId = (res as ResultSetHeader).insertId;
-    await conn.execute('UPDATE `vehicle_images` SET vehicle_id = ? WHERE vehicle_image_id = ?', [vehicleId, imageId]);
+    await conn.execute(
+      'UPDATE vehicle_images SET vehicle_id = ? WHERE vehicle_image_id = ?',
+      [vehicleId, imageId]
+    );
   }
 }
+
 
 // Staff and Buyers at end
 

@@ -2,6 +2,7 @@ import mysql from 'mysql2/promise';
 import { config } from '../config/config';
 
 async function main() {
+  console.log('cehck config', config.db)
   const conn = await mysql.createConnection({
     host: config.db.host,
     port: config.db.port,

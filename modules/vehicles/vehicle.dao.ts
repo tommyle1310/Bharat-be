@@ -54,7 +54,7 @@ export async function deleteVehicle(id: number): Promise<boolean> {
 
 export interface VehicleGroupItem {
   id: string;
-  type: "state" | "auction_status";
+  type: "state" | "auction_status" | "all";
   title: string;
   total_vehicles: string;
   image: string;
@@ -66,10 +66,9 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
   const DEFAULT_IMG =
     "https://images.unsplash.com/photo-1517673132405-a56a62b18caf?w=800";
 
-  // Define the 4 fixed regions
   const REGIONS = ["North", "South", "East", "West"];
 
-  // Query vehicle count grouped by region
+  // Count per region
   const [regionRows] = await db.query<RowDataPacket[]>(
     `SELECT s.region AS region, COUNT(v.vehicle_id) AS total
      FROM states s
@@ -78,7 +77,6 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
      GROUP BY s.region`
   );
 
-  // Convert query result to a lookup map { region -> total }
   const regionMap: Record<string, number> = {};
   for (const r of regionRows) {
     if (r.region) {
@@ -86,7 +84,6 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
     }
   }
 
-  // Always output 4 regions, even if missing in DB
   const stateItems: VehicleGroupItem[] = REGIONS.map((region, index) => ({
     id: String(index + 1),
     type: "state",
@@ -112,9 +109,23 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
     image: DEFAULT_IMG,
   }));
 
-  return [...stateItems, ...statusItems];
-}
+  // query tổng số xe
+  const [allRows] = await db.query<RowDataPacket[]>(
+    `SELECT COUNT(*) AS total_all FROM vehicle`
+  );
 
+  const total_all = allRows?.[0]?.total_all ?? 0;
+
+  const allItem: VehicleGroupItem = {
+    id: "0",
+    type: "all",
+    title: "All",
+    total_vehicles: String(total_all),
+    image: DEFAULT_IMG,
+  };
+
+  return [...stateItems, ...statusItems, allItem];
+}
 
 export interface VehicleListItem {
   vehicle_id: string;
@@ -139,7 +150,7 @@ export interface VehicleListItem {
 }
 
 export async function getVehiclesByGroup(
-  type: "state" | "auction_status",
+  type: "state" | "auction_status" | 'all',
   title: string,
   limit = 50,
   offset = 0
@@ -171,7 +182,13 @@ export async function getVehiclesByGroup(
       LEFT JOIN case_options co ON co.id = v.auction_status_id
     `;
     where = "LOWER(TRIM(s.region)) = LOWER(?)";
-  }
+  } else if (type === "all") {
+    join = `
+      LEFT JOIN states s ON s.id = v.vehicle_state_id
+      LEFT JOIN case_options co ON co.id = v.auction_status_id
+    `;
+    where = "1 = 1";
+  } 
 
   const sql = `
     SELECT
@@ -223,6 +240,8 @@ export async function getVehiclesByGroup(
     is_favorite: false,
     manufacture_year: r.manufacture_year ?? null,
     main_image: r.main_image ?? DEFAULT_IMG,
+    vehicleId:  r.vehicle_id,
+    imgIndex: r.vehicle_image_id ?? 1,
     status: r.status ?? null,
     bid_amount: r.bid_amount != null ? String(r.bid_amount) : null,
     manager_name: r.manager_name ?? null,
