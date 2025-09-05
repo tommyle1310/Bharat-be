@@ -32,7 +32,14 @@ export function createApp(): Application {
   app.use(express.urlencoded({ extended: true }));
 
   // Static files
-  app.use('/public', express.static(path.join(__dirname, 'public')));
+  // Local public directory (backend-specific static files)
+  // Accessible via: http://localhost:4000/public/filename.ext
+  app.use(config.static.publicUrl, express.static(config.static.publicPath));
+  
+  // External data-files directory (sibling to backend)
+  // Accessible via: http://localhost:4000/data-files/filename.ext
+  // This serves files from kmsg/data-files/ directory
+  app.use(config.static.dataFilesUrl, express.static(config.static.dataFilesPath));
 
   // Health
   app.get('/health', async (_req: Request, res: Response) => {
@@ -52,6 +59,8 @@ export function createApp(): Application {
   app.use(`/${API_PREFIX}/cities`, cityRoutes);
   app.use(`/${API_PREFIX}/staffs`, staffRoutes);
   app.use(`/${API_PREFIX}/buyers`, buyerRoutes);
+  // app.use(`/${API_PREFIX}/vehicle-types`, vehicleTypeRoutes);
+  // app.use(`/${API_PREFIX}/ownership-serials`, ownershipSerialRoutes);
 
   // 404
   app.use((_req: Request, res: Response) => {

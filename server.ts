@@ -1,5 +1,4 @@
-import dotenv from 'dotenv';
-dotenv.config({ path: '.env' });
+
 import http from 'http';
 import { createApp } from './app';
 import { initSocket } from './config/socket';
@@ -11,7 +10,7 @@ const server = http.createServer(app);
 initSocket(server);
 
 server.listen(config.port, config.host, () => {
-  console.log(`HTTP listening on http://${config.host}:${config.port}`);
+  console.log(`HTTP listening on http://${config.host}:${config.port} in ${config.env}`);
 });
 
 const shutdown = async (signal: string) => {

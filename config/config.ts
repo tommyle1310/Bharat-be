@@ -1,8 +1,23 @@
 import dotenv from 'dotenv';
 import path from 'path';
 
-dotenv.config({ path: path.resolve(__dirname, '../.env.development') });
+// Lấy NODE_ENV, mặc định là 'development'
+const env = process.env.NODE_ENV || 'development';
+
+// Xác định đúng file env theo NODE_ENV
+const envFile = path.resolve(__dirname, `../.env.${env}`);
+dotenv.config({ path: envFile });
+
 console.log('check env config', process.env.REDIS_HOST, process.env.REDIS_PORT, process.env.DB_USER, process.env.DB_PASSWORD, process.env.DB_NAME, process.env.DB_CONN_LIMIT);
+
+// Log static file paths
+const staticConfig = {
+  publicPath: path.join(__dirname, '../public'),
+  dataFilesPath: process.env.DATA_FILES_PATH || path.join(__dirname, '../../data-files'),
+  publicUrl: process.env.PUBLIC_URL || '/public',
+  dataFilesUrl: process.env.DATA_FILES_URL || '/data-files',
+};
+console.log('Static files config:', staticConfig);
 export const config = {
   env: process.env.NODE_ENV || 'development',
   host: process.env.HOST || '0.0.0.0',
@@ -29,6 +44,17 @@ export const config = {
     ? {}
     : undefined
   
+  },
+
+  // Static files configuration
+  static: {
+    // Local public directory (for backend-specific static files)
+    publicPath: path.join(__dirname, '../public'),
+    // External data-files directory (sibling to backend)
+    dataFilesPath: process.env.DATA_FILES_PATH || path.join(__dirname, '../../data-files'),
+    // Public URL paths
+    publicUrl: process.env.PUBLIC_URL || '/public',
+    dataFilesUrl: process.env.DATA_FILES_URL || '/data-files',
   },
 } as const;
 

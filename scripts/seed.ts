@@ -156,6 +156,46 @@ async function ensureFuelTypes(conn: Connection) {
   }
 }
 
+async function ensureVehicleTypes(conn: Connection) {
+  type VehicleTypeRow = { id: number; vehicle_type: string };
+  const rows =
+    tryReadJson<VehicleTypeRow[]>('vehicle_types.json') || [
+      { id: 10, vehicle_type: '2W' },
+      { id: 20, vehicle_type: '3W' },
+      { id: 30, vehicle_type: '4W' },
+      { id: 40, vehicle_type: 'Bus' },
+      { id: 50, vehicle_type: 'Truck' },
+      { id: 60, vehicle_type: 'Commercial' },
+      { id: 70, vehicle_type: 'Form Equipment' },
+      { id: 80, vehicle_type: 'Construction Equipment' },
+    ];
+  for (const vt of rows) {
+    await conn.execute(
+      'INSERT INTO `vehicle_types` (id, vehicle_type) VALUES (?, ?) ON DUPLICATE KEY UPDATE vehicle_type=VALUES(vehicle_type)',
+      [vt.id, vt.vehicle_type]
+    );
+  }
+}
+
+async function ensureOwnershipSerial(conn: Connection) {
+  type OwnershipSerialRow = { id: number; ownership_serial: string };
+  const rows =
+    tryReadJson<OwnershipSerialRow[]>('ownership_serial.json') || [
+      { id: 1, ownership_serial: '0' },
+      { id: 2, ownership_serial: '1' },
+      { id: 3, ownership_serial: '2' },
+      { id: 4, ownership_serial: '3' },
+      { id: 5, ownership_serial: '4' },
+      { id: 6, ownership_serial: '5+' },
+    ];
+  for (const os of rows) {
+    await conn.execute(
+      'INSERT INTO `ownership_serial` (id, ownership_serial) VALUES (?, ?) ON DUPLICATE KEY UPDATE ownership_serial=VALUES(ownership_serial)',
+      [os.id, os.ownership_serial]
+    );
+  }
+}
+
 async function seedVehicleMakes(conn: Connection): Promise<number[]> {
   const ids: number[] = [];
   const makes = ['Honda', 'Maruti Suzuki', 'Hyundai', 'Tata', 'Mahindra'];
@@ -330,6 +370,8 @@ async function main() {
     await ensureCities(conn);
     await ensureFuelTypes(conn);
     await ensureCaseOptions(conn);
+    await ensureVehicleTypes(conn);
+    await ensureOwnershipSerial(conn);
 
     // Ordered seeding with FK pools
     const makeIds = await seedVehicleMakes(conn);

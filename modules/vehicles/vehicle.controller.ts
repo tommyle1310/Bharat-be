@@ -75,5 +75,61 @@ export async function search(req: Request, res: Response) {
   const data = await service.searchVehicles(keyword, limit, offset);
   res.json(data);
 }
+export async function searchByGroup(req: Request, res: Response) {
+  const keyword = String(req.query.keyword);
+  const type = String(req.query.type || '').toLowerCase();
+  const title = String(req.query.title);
+  const limit = Number(req.query.limit ?? 50);
+  const offset = Number(req.query.offset ?? 0);
+  const data = await service.searchVehiclesByGroup(keyword, type as 'state' | 'auction_status' | 'all', title, limit, offset);
+  res.json(data);
+}
+
+export async function filterByGroup(req: Request, res: Response) {
+  const type = String(req.query.type || '').toLowerCase();
+  const title = String(req.query.title);
+  const vehicleType = String(req.query.vehicle_type || '');
+  const vehicleFuel = String(req.query.vehicle_fuel || '');
+  const ownership = String(req.query.ownership || '');
+  const rcAvailable = String(req.query.rc_available || '');
+  const limit = Number(req.query.limit ?? 50);
+  const offset = Number(req.query.offset ?? 0);
+  
+  if (!type || !title) {
+    return res.status(400).json({ message: 'type and title query params are required' });
+  }
+  
+  // Validate type is one of the allowed values
+  if (!['state', 'auction_status', 'all'].includes(type)) {
+    return res.status(400).json({ message: 'Invalid type. Must be "state", "auction_status", or "all"' });
+  }
+
+  const data = await service.filterVehiclesByGroup(
+    type as 'state' | 'auction_status' | 'all', 
+    title, 
+    vehicleType, 
+    vehicleFuel, 
+    ownership, 
+    rcAvailable, 
+    limit, 
+    offset
+  );
+  res.json(data);
+}
+
+export async function getOwnershipTypes(req: Request, res: Response) {
+  const data = await service.getOwnershipTypes();
+  res.json(data);
+}
+
+export async function getFuelTypes(req: Request, res: Response) {
+  const data = await service.getFuelTypes();
+  res.json(data);
+}
+
+export async function getVehicleTypes(req: Request, res: Response) {
+  const data = await service.getVehicleTypes();
+  res.json(data);
+}
 
 

@@ -36,3 +36,31 @@ export async function listByGroup(type: 'state' | 'auction_status' | 'all', titl
 export async function searchVehicles(keyword: string, limit?: number, offset?: number): Promise<dao.VehicleItem[]> {
   return dao.searchVehicles(keyword, limit, offset);
 }
+export async function searchVehiclesByGroup(keyword: string, type: 'state' | 'auction_status' | 'all', title: string, limit?: number, offset?: number): Promise<dao.VehicleListItem[]> {
+  return dao.searchVehiclesByGroup(keyword, type, title, limit, offset);
+}
+
+export async function filterVehiclesByGroup(
+  type: 'state' | 'auction_status' | 'all',
+  title: string,
+  vehicleType: string,
+  vehicleFuel: string,
+  ownership: string,
+  rcAvailable: string,
+  limit?: number,
+  offset?: number
+): Promise<dao.VehicleListItem[]> {
+  return dao.filterVehiclesByGroup(type, title, vehicleType, vehicleFuel, ownership, rcAvailable, limit, offset);
+}
+
+export async function getOwnershipTypes() {
+  return dao.getOwnershipTypes();
+}
+
+export async function getFuelTypes() {
+  return dao.getFuelTypes();
+}
+
+export async function getVehicleTypes() {
+  return dao.getVehicleTypes();
+}

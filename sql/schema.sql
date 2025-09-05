@@ -71,6 +71,18 @@ CREATE TABLE `vehicles` (
   PRIMARY KEY (`vehicle_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS `vehicle_types` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `vehicle_type` varchar(244) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=81 DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `ownership_serial` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `ownership_serial` varchar(10) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE `watchlist` (
   `id` int NOT NULL,
   `user_id` int NOT NULL,

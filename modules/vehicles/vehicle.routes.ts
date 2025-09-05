@@ -7,6 +7,11 @@ const router = Router();
 router.get('/groups/list', ctrl.listByGroup);
 router.get('/groups', ctrl.groups);
 router.get('/search', ctrl.search);
+router.get('/search-by-group', ctrl.searchByGroup);
+router.get('/filter-by-group', ctrl.filterByGroup);
+router.get('/lookup/ownership', ctrl.getOwnershipTypes);
+router.get('/lookup/fuel', ctrl.getFuelTypes);
+router.get('/lookup/vehicle-types', ctrl.getVehicleTypes);
 
 // Standard CRUD
 router.get('/', ctrl.list);
