@@ -735,6 +735,19 @@ export async function getOwnershipTypes() {
   );
   return rows;
 }
+export async function getSelectedVehicleImages(id: number) {
+  if (!id || isNaN(id)) {
+    throw new Error("Invalid vehicle id");
+  }
+
+  const db: Pool = getDb();
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT * FROM vehicle_images WHERE vehicle_id = ? ORDER BY vehicle_image_id ASC`,
+    [id]
+  );
+  return rows;
+}
+
 
 export async function getFuelTypes() {
   const db: Pool = getDb();
