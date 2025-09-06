@@ -4,19 +4,36 @@ import path from 'path';
 // Lấy NODE_ENV, mặc định là 'development'
 const env = process.env.NODE_ENV || 'development';
 
-// Xác định đúng file env theo NODE_ENV
+// Try to load specific env file, fallback to .env if not found
 const envFile = path.resolve(__dirname, `../.env.${env}`);
-dotenv.config({ path: envFile });
+const fallbackEnvFile = path.resolve(__dirname, '../.env');
+
+// Load environment variables
+try {
+  dotenv.config({ path: envFile });
+  console.log(`Loaded environment from .env.${env}`);
+} catch (error) {
+  console.log(`No .env.${env} found, trying .env...`);
+  try {
+    dotenv.config({ path: fallbackEnvFile });
+    console.log('Loaded environment from .env');
+  } catch (fallbackError) {
+    console.log('No .env file found, using system environment variables');
+  }
+}
 
 console.log('check env config', process.env.REDIS_HOST, process.env.REDIS_PORT, process.env.DB_USER, process.env.DB_PASSWORD, process.env.DB_NAME, process.env.DB_CONN_LIMIT);
 
 // Log static file paths
 const staticConfig = {
   publicPath: path.join(__dirname, '../public'),
-  dataFilesPath: process.env.DATA_FILES_PATH || path.join(__dirname, '../../data-files'),
+  dataFilesPath: process.env.DATA_FILES_PATH 
+    || process.env.DIR_BASE 
+    || path.join(__dirname, '../../data-files'),
   publicUrl: process.env.PUBLIC_URL || '/public',
   dataFilesUrl: process.env.DATA_FILES_URL || '/data-files',
 };
+
 console.log('Static files config:', staticConfig);
 export const config = {
   env: process.env.NODE_ENV || 'development',

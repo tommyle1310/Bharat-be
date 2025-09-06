@@ -1,21 +1,21 @@
 version: "3.9"
 
 services:
-  redis:
-    image: redis:latest
-    container_name: redis-local
+  # Application service (using external database)
+  app:
+    build: .
+    container_name: kmsg-buyer-backend
+    restart: unless-stopped
     ports:
-      - "6379:6379"
-
-  mysql:
-    image: mysql:8.0
-    container_name: mysql-local
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: kmsgdb
-      MYSQL_USER: kmsguser
-      MYSQL_PASSWORD: kmsgpass
-    ports:
-      - "3306:3306"
+      - "4000:4000"
+    env_file:
+      - .env  # Use your .env file with external database
     volumes:
-      - ./sql:/docker-entrypoint-initdb.d
+      - ./data-files:/app/data-files
+      - ./public:/app/public
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

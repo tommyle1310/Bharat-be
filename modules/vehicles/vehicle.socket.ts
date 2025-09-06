@@ -1,7 +1,7 @@
-import { IOServer } from 'socket.io';
+import { Server } from 'socket.io';
 
-export function registerVehicleSockets(io: IOServer) {
-  io.of('/vehicles').on('connection', (socket) => {
+export function registerVehicleSockets(io: Server) {
+  io.of('/vehicles').on('connection', (socket: any) => {
     socket.emit('hello', { message: 'Welcome to vehicles namespace' });
   });
 }

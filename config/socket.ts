@@ -1,14 +1,14 @@
 import { Server as HTTPServer } from 'http';
-import { Server as IOServer } from 'socket.io';
+import { Server as SocketIOServer } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { getRedis } from './redis';
 
-let io: IOServer | null = null;
+let io: SocketIOServer | null = null;
 
-export function initSocket(server: HTTPServer): IOServer {
+export function initSocket(server: HTTPServer): SocketIOServer {
   if (io) return io;
 
-  io = new IOServer(server, {
+  io = new SocketIOServer(server, {
     cors: {
       origin: '*',
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
@@ -32,7 +32,7 @@ export function initSocket(server: HTTPServer): IOServer {
   return io;
 }
 
-export function getIO(): IOServer {
+export function getIO(): SocketIOServer {
   if (!io) throw new Error('Socket.IO not initialized. Call initSocket(server) first.');
   return io;
 }
