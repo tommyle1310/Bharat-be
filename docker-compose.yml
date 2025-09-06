@@ -1,7 +1,6 @@
 version: "3.9"
 
 services:
-  # Application service (using external database)
   app:
     build: .
     container_name: kmsg-buyer-backend
@@ -9,13 +8,16 @@ services:
     ports:
       - "4000:4000"
     env_file:
-      - .env  # Use your .env file with external database
-    volumes:
-      - ./data-files:/app/data-files
-      - ./public:/app/public
+      - ${ENV_FILE:-.env.development}
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    networks:
+      - kmsg_buyer_net
+
+networks:
+  kmsg_buyer_net:
+    name: kmsg_buyer_net

@@ -58,7 +58,6 @@ export interface VehicleGroupItem {
   type: "state" | "auction_status" | "all";
   title: string;
   total_vehicles: string;
-  image: string;
 }
 
 export async function getGroups(): Promise<VehicleGroupItem[]> {
@@ -90,7 +89,6 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
     type: "state",
     title: region,
     total_vehicles: String(regionMap[region] ?? 0),
-    image: DEFAULT_IMG,
   }));
 
   // Auction status via case_options, only auction_end_dttm > now
@@ -109,7 +107,6 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
     type: "auction_status",
     title: String(r.name),
     total_vehicles: String(r.total),
-    image: DEFAULT_IMG,
   }));
 
   // Tổng số xe chưa hết hạn
@@ -124,7 +121,6 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
     type: "all",
     title: "All",
     total_vehicles: String(total_all),
-    image: DEFAULT_IMG,
   };
 
   return [...stateItems, ...statusItems, allItem];
@@ -566,16 +562,13 @@ export async function filterVehiclesByGroup(
 ): Promise<VehicleListItem[]> {
   const db: Pool = getDb();
 
-  // Default image URLs
-  const DEFAULT_IMG = DEFAULT_IMAGES.VEHICLE; // Fallback to external URL
-  const MANAGER_IMG = DEFAULT_IMAGES.MANAGER; // Fallback to external URL
+  const DEFAULT_IMG = DEFAULT_IMAGES.VEHICLE;
+  const MANAGER_IMG = DEFAULT_IMAGES.MANAGER;
 
-  // Sanitize inputs
   const safeTitle = String(title || "").trim();
   const safeLimit = Math.max(1, parseInt(String(limit), 10) || 50);
   const safeOffset = Math.max(0, parseInt(String(offset), 10) || 0);
 
-  // Build WHERE and JOIN clauses based on type
   let where = "";
   let join = `
     LEFT JOIN vehicle_make mk ON mk.id = v.vehicle_make_id
@@ -586,7 +579,8 @@ export async function filterVehiclesByGroup(
     LEFT JOIN states s ON s.id = v.vehicle_state_id
     LEFT JOIN case_options co ON co.id = v.auction_status_id
     LEFT JOIN vehicle_types vt ON vt.id = v.vehicle_type_id
-    LEFT JOIN ownership_serial os ON os.id = v.vehicle_ownership_type_id
+    LEFT JOIN vehicle_images vmi ON vmi.vehicle_image_id = v.vehicle_image_id
+    LEFT JOIN ownership_serial os ON os.ownership_id = CAST(v.ownership_serial AS UNSIGNED)
   `;
 
   if (type === "auction_status") {
@@ -597,9 +591,8 @@ export async function filterVehiclesByGroup(
     where = "v.auction_end_dttm > NOW()";
   }
 
-  // Build filter conditions
-  const filterConditions = [];
-  const filterParams = [];
+  const filterConditions: string[] = [];
+  const filterParams: any[] = [];
 
   // Vehicle type filter
   if (vehicleType && vehicleType.trim()) {
@@ -607,6 +600,7 @@ export async function filterVehiclesByGroup(
       .split(",")
       .map((id) => parseInt(id.trim(), 10))
       .filter((id) => !isNaN(id));
+      console.log('cehck typpe ids', typeIds)
     if (typeIds.length > 0) {
       filterConditions.push(
         `v.vehicle_type_id IN (${typeIds.map(() => "?").join(",")})`
@@ -629,7 +623,7 @@ export async function filterVehiclesByGroup(
     }
   }
 
-  // Ownership filter
+  // Ownership filter (fixed)
   if (ownership && ownership.trim()) {
     const ownershipIds = ownership
       .split(",")
@@ -637,9 +631,7 @@ export async function filterVehiclesByGroup(
       .filter((id) => !isNaN(id));
     if (ownershipIds.length > 0) {
       filterConditions.push(
-        `v.vehicle_ownership_type_id IN (${ownershipIds
-          .map(() => "?")
-          .join(",")})`
+        `os.ownership_id IN (${ownershipIds.map(() => "?").join(",")})`
       );
       filterParams.push(...ownershipIds);
     }
@@ -654,7 +646,6 @@ export async function filterVehiclesByGroup(
     }
   }
 
-  // Combine all conditions
   const allConditions = [where];
   if (filterConditions.length > 0) {
     allConditions.push(...filterConditions);
@@ -667,7 +658,7 @@ export async function filterVehiclesByGroup(
       v.auction_end_dttm AS end_time,
       v.odometer_reading AS odometer,
       ft.fuel_type AS fuel,
-      v.ownership_serial,
+      os.ownership AS ownership_label,
       mk.make_name AS make,
       vmi.img_extension AS img_extension,
       md.model_name AS model,
@@ -690,7 +681,6 @@ export async function filterVehiclesByGroup(
     LIMIT ? OFFSET ?
   `;
 
-  // Prepare query parameters
   let params: any[];
   if (type === "all") {
     params = [MANAGER_IMG, DEFAULT_IMG, ...filterParams, safeLimit, safeOffset];
@@ -712,7 +702,7 @@ export async function filterVehiclesByGroup(
       end_time: r.end_time ? new Date(r.end_time).toISOString() : null,
       odometer: r.odometer != null ? String(r.odometer) : null,
       fuel: r.fuel ?? null,
-      owner_serial: r.ownership_serial ?? null,
+      owner_serial: r.ownership_label ?? null,
       state_rto: r.state_rto ?? null,
       make: r.make ?? null,
       model: r.model ?? null,
@@ -737,10 +727,11 @@ export async function filterVehiclesByGroup(
   }
 }
 
+
 export async function getOwnershipTypes() {
   const db: Pool = getDb();
   const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT * FROM ownership_serial ORDER BY id ASC`
+    `SELECT * FROM ownership_serial ORDER BY ownership_id ASC`
   );
   return rows;
 }

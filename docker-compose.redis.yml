@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  redis-local:
+    image: redis:7-alpine
+    container_name: kmsg-redis-local
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - kmsg_buyer_net
+
+networks:
+  kmsg_buyer_net:
+    external: true
+    name: kmsg_buyer_net

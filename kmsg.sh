@@ -1,215 +1,125 @@
 #!/bin/bash
+set -euo pipefail
 
-# KMSG Buyer-Service Master Script
-# One script to rule them all! 🎯
+PROJECT="kmsg-buyer"
+ENV_FILE=""
+RUNTIME_ENV=".env.runtime"   # file tạm thời cho app container khi cần chỉnh REDIS_* lúc chạy redis local
 
-set -e
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-print_status() { echo -e "${GREEN}[KMSG]${NC} $1"; }
-print_warning() { echo -e "${YELLOW}[KMSG]${NC} $1"; }
-print_error() { echo -e "${RED}[KMSG]${NC} $1"; }
-print_info() { echo -e "${BLUE}[KMSG]${NC} $1"; }
-
-# Show help
-show_help() {
-    echo "🎯 KMSG Buyer-Service Master Script"
-    echo ""
-    echo "Usage: ./kmsg.sh [command]"
-    echo ""
-    echo "Commands:"
-    echo "  setup     - First time setup (run once)"
-    echo "  start     - Start the service"
-    echo "  stop      - Stop the service"
-    echo "  restart   - Restart the service"
-    echo "  logs      - View logs"
-    echo "  status    - Check status"
-    echo "  deploy    - Manual deployment"
-    echo "  webhook   - Test webhook"
-    echo "  help      - Show this help"
-    echo ""
-    echo "Examples:"
-    echo "  ./kmsg.sh setup    # First time setup"
-    echo "  ./kmsg.sh start    # Start service"
-    echo "  ./kmsg.sh logs     # View logs"
+select_env() {
+  echo "🌐 Select environment file:"
+  select choice in ".env.development" ".env.test" ".env.production"; do
+    case $choice in
+      .env.development|.env.test|.env.production) ENV_FILE="$choice"; break;;
+      *) echo "❌ Invalid choice";;
+    esac
+  done
+  export ENV_FILE
+  echo "[KMSG] Using $ENV_FILE"
 }
 
-# Setup function
-setup() {
-    print_status "Setting up KMSG Buyer-Service..."
-    
-    # Make scripts executable
-    chmod +x *.sh
-    
-    # Create .env if not exists
-    if [ ! -f .env ]; then
-        print_status "Creating .env file..."
-        cat > .env << EOF
-NODE_ENV=production
-HOST=0.0.0.0
-PORT=4000
-DB_HOST=mysql
-DB_PORT=3306
-DB_USER=kmsguser
-DB_PASSWORD=kmsgpass
-DB_NAME=kmsgdb
-DB_CONN_LIMIT=20
-REDIS_HOST=redis
-REDIS_PORT=6379
-REDIS_USERNAME=
-REDIS_PASSWORD=
-REDIS_DB=0
-REDIS_TLS=false
-CORS_ORIGIN=*
-DATA_FILES_PATH=/app/data-files
-PUBLIC_URL=/public
-DATA_FILES_URL=/data-files
-WEBHOOK_PORT=3001
-WEBHOOK_SECRET=$(openssl rand -hex 32)
-EOF
-    fi
-    
-    # Start webhook (stop old one first if exists)
-    print_status "Starting webhook..."
-    pm2 stop kmsg-buyer-webhook 2>/dev/null || true
-    pm2 delete kmsg-buyer-webhook 2>/dev/null || true
-    pm2 start deploy-webhook.js --name "kmsg-buyer-webhook" --env production
-    pm2 save
-    
-    # Install Docker if not installed
-    if ! command -v docker &> /dev/null; then
-        print_status "Installing Docker..."
-        sudo apt-get update
-        sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-        echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-        sudo apt-get update
-        sudo apt-get install -y docker-ce docker-ce-cli containerd.io
-        sudo usermod -aG docker $USER
-        print_status "Docker installed! You may need to log out and back in for group changes to take effect."
-    fi
-    
-    # Install Docker Compose if not installed
-    if ! command -v docker-compose &> /dev/null; then
-        print_status "Installing Docker Compose..."
-        sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-        sudo chmod +x /usr/local/bin/docker-compose
-    fi
-    
-    # Deploy service
-    print_status "Deploying service..."
-    ./deploy.sh
-    
-    print_status "✅ Setup complete!"
-    print_info "🌐 Service: http://$(curl -s ifconfig.me):4000"
-    print_info "🎣 Webhook: http://$(curl -s ifconfig.me):3001/deploy"
+# simple tcp check (timeout 2s)
+check_tcp() {
+  host="$1"; port="$2"
+  (echo > /dev/tcp/$host/$port) >/dev/null 2>&1
 }
 
-# Start function
+# get var from env file
+env_get() {
+  key="$1"
+  awk -F= -v k="$key" '$0!~/^#/ && $1==k { $1=""; sub(/^=/,""); print }' "$ENV_FILE" | tr -d '\r'
+}
+
+# ensure network exists
+ensure_network() {
+  if ! docker network inspect kmsg_buyer_net >/dev/null 2>&1; then
+    docker network create kmsg_buyer_net >/dev/null
+  fi
+}
+
 start() {
-    print_status "Starting buyer-service..."
-    if docker-compose ps | grep -q "Up"; then
-        print_warning "Services are already running. Restarting..."
-        docker-compose restart
+  select_env
+  ensure_network
+
+  # read envs
+  REDIS_HOST="$(env_get REDIS_HOST || true)"
+  REDIS_PORT="$(env_get REDIS_PORT || true)"
+  DB_HOST="$(env_get DB_HOST || true)"
+  DB_PORT="$(env_get DB_PORT || echo 3306)"
+
+  # --- DB: external only (KHÔNG spin mysql) ---
+  if [[ -n "$DB_HOST" && "$DB_HOST" != "127.0.0.1" && "$DB_HOST" != "localhost" ]]; then
+    if ! check_tcp "$DB_HOST" "$DB_PORT"; then
+      echo "❌ Cannot reach external MySQL ${DB_HOST}:${DB_PORT}. App sẽ vẫn start (restart:unless-stopped), nhưng nên kiểm tra DB."
+      # không fallback MySQL theo yêu cầu
     else
-        print_status "Starting services..."
-        docker-compose up -d
+      echo "✅ External MySQL reachable: ${DB_HOST}:${DB_PORT}"
     fi
-    sleep 10
-    print_status "✅ Services started! Backend available at: http://localhost:4000"
+  fi
+
+  # --- Redis: local vs external ---
+  COMPOSE_FILES=(-f docker-compose.yml)
+  USE_RUNTIME_ENV=0
+
+  if [[ "$REDIS_HOST" == "127.0.0.1" || "$REDIS_HOST" == "localhost" || -z "$REDIS_HOST" ]]; then
+    # Dùng redis local (container) + chỉnh REDIS_HOST cho app → trỏ tới service name trong network
+    REDIS_PORT="${REDIS_PORT:-6379}"
+    echo "🔧 Starting local Redis container at host port ${REDIS_PORT}..."
+    export REDIS_PORT
+    COMPOSE_FILES+=(-f docker-compose.redis.yml)
+
+    # tạo .env.runtime dựa trên ENV_FILE nhưng sửa REDIS_* cho app container
+    cp "$ENV_FILE" "$RUNTIME_ENV"
+    # bắt buộc host=redis-local và tls=false
+    sed -i.bak -e 's/^REDIS_HOST=.*/REDIS_HOST=redis-local/' \
+               -e 's/^REDIS_PORT=.*/REDIS_PORT=6379/' \
+               -e 's/^REDIS_TLS=.*/REDIS_TLS=false/' "$RUNTIME_ENV" || true
+    rm -f "${RUNTIME_ENV}.bak"
+    USE_RUNTIME_ENV=1
+  else
+    # External redis → test connect, nếu fail thì fallback sang local
+    RPORT="${REDIS_PORT:-6379}"
+    if check_tcp "$REDIS_HOST" "$RPORT"; then
+      echo "✅ External Redis reachable: ${REDIS_HOST}:${RPORT}"
+    else
+      echo "⚠️  External Redis unreachable: ${REDIS_HOST}:${RPORT} → fallback to local Redis"
+      export REDIS_PORT="${REDIS_PORT:-6379}"
+      COMPOSE_FILES+=(-f docker-compose.redis.yml)
+      cp "$ENV_FILE" "$RUNTIME_ENV"
+      sed -i.bak -e 's/^REDIS_HOST=.*/REDIS_HOST=redis-local/' \
+                 -e 's/^REDIS_PORT=.*/REDIS_PORT=6379/' \
+                 -e 's/^REDIS_TLS=.*/REDIS_TLS=false/' "$RUNTIME_ENV" || true
+      rm -f "${RUNTIME_ENV}.bak"
+      USE_RUNTIME_ENV=1
+    fi
+  fi
+
+  # up
+  if [[ $USE_RUNTIME_ENV -eq 1 ]]; then
+    ENV_FILE="$RUNTIME_ENV" docker compose -p "$PROJECT" "${COMPOSE_FILES[@]}" up -d
+  else
+    docker compose -p "$PROJECT" "${COMPOSE_FILES[@]}" up -d
+  fi
+
+  echo "✅ Up. Use: ./kmsg.sh logs | ./kmsg.sh status"
 }
 
-# Stop function
 stop() {
-    print_status "Stopping buyer-service..."
-    docker-compose down
-    print_status "✅ All services stopped successfully!"
+  select_env
+  docker compose -p "kmsg-buyer" -f docker-compose.yml down || true
+  # stop redis-local nếu có
+  docker compose -p "kmsg-buyer" -f docker-compose.yml -f docker-compose.redis.yml down || true
+  rm -f .env.runtime
 }
 
-# Restart function
-restart() {
-    print_status "Restarting buyer-service..."
-    docker-compose down
-    docker-compose up -d
-    sleep 10
-    print_status "✅ Services restarted! Backend available at: http://localhost:4000"
-}
+restart() { stop; start; }
+logs()    { select_env; docker compose -p "kmsg-buyer" logs -f; }
+status()  { select_env; docker compose -p "kmsg-buyer" ps; }
 
-# Logs function
-logs() {
-    print_status "Showing logs..."
-    docker-compose logs -f
-}
-
-# Status function
-status() {
-    print_status "Checking status..."
-    echo ""
-    print_info "📊 PM2 Status:"
-    pm2 status
-    echo ""
-    print_info "🐳 Docker Status:"
-    docker-compose ps
-    echo ""
-    print_info "🌐 Health Check:"
-    curl -s http://localhost:4000/health | jq . 2>/dev/null || curl -s http://localhost:4000/health
-}
-
-# Deploy function
-deploy() {
-    print_status "Manual deployment..."
-    ./deploy.sh
-}
-
-# Webhook test function
-webhook() {
-    print_status "Testing webhook..."
-    WEBHOOK_URL="http://localhost:3001/deploy"
-    SECRET=$(grep WEBHOOK_SECRET .env | cut -d'=' -f2)
-    
-    curl -X POST "$WEBHOOK_URL" \
-        -H "Content-Type: application/json" \
-        -d "{\"ref\": \"refs/heads/main\", \"secret\": \"$SECRET\"}"
-}
-
-# Main script logic
 case "${1:-help}" in
-    setup)
-        setup
-        ;;
-    start)
-        start
-        ;;
-    stop)
-        stop
-        ;;
-    restart)
-        restart
-        ;;
-    logs)
-        logs
-        ;;
-    status)
-        status
-        ;;
-    deploy)
-        deploy
-        ;;
-    webhook)
-        webhook
-        ;;
-    help|--help|-h)
-        show_help
-        ;;
-    *)
-        print_error "Unknown command: $1"
-        show_help
-        exit 1
-        ;;
+  start)   start ;;
+  stop)    stop ;;
+  restart) restart ;;
+  logs)    logs ;;
+  status)  status ;;
+  *) echo "Usage: ./kmsg.sh {start|stop|restart|logs|status}" ;;
 esac
