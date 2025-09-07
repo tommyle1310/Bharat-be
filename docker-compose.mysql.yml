@@ -1,0 +1,25 @@
+version: "3.8"
+services:
+  mysql:
+    image: mysql:8
+    container_name: indus_auction_system_buyer_service_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: prod_indus_db
+      MYSQL_USER: indus_app_user
+      MYSQL_PASSWORD: IndusProd
+    restart: unless-stopped
+    ports:
+      - "${MYSQL_HOST_PORT:-3307}:3306"
+    volumes:
+      - indus_mysql_data:/var/lib/mysql
+    networks:
+      - indus_buyer_net
+
+volumes:
+  indus_mysql_data:
+
+networks:
+  indus_buyer_net:
+    external: true
+    name: indus_buyer_net

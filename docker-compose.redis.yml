@@ -1,13 +1,17 @@
+version: "3.8"
 services:
-  redis-local:
+  redis:
     image: redis:7-alpine
-    container_name: kmsg-redis-local
+    container_name: indus_auction_system_buyer_service_redis
     restart: unless-stopped
+    # app sẽ connect via docker network to 'redis:6379' (container name)
+    # host mapping is optional for debug; env var REDIS_HOST_PORT defaults to 6380
     ports:
-      - "6380:6379"  # host 6380, container 6379
+      - "${REDIS_HOST_PORT:-6380}:6379"
     networks:
-      - kmsg_buyer_net
+      - indus_buyer_net
 
 networks:
-  kmsg_buyer_net:
+  indus_buyer_net:
     external: true
+    name: indus_buyer_net

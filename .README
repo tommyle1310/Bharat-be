@@ -1,5 +1,0 @@
-to run mysql + redis
-.\start-dev.ps1
-
-to stop container mysql + redis
-.\stop-dev.ps1
