@@ -10,7 +10,7 @@ set -euo pipefail
 #   ./indus-deploy.sh logs
 #
 # Behavior:
-# - Always aim to run host port 1310 for the app (1310:4000).
+# - Always aim to run host port 1310 for the app (1310:1310).
 # - If port 1310 has any listener, script will show info and ask you to confirm to kill/stop it.
 # - Prefix for containers: indus_auction_system_buyer_service_*
 # - If REDIS in .env unreachable -> spin local redis container (internal name 'redis').
@@ -191,6 +191,44 @@ start(){
            -e 's/^DB_PORT=.*/DB_PORT=3306/' "$RUNTIME_ENV"
   fi
 
+  # Handle file paths for local vs remote environments
+  # For local development with --prefer-local-db, use local file paths from .env.development
+  if [[ "$PREFER_LOCAL_DB" -eq 1 && -f ".env.development" ]]; then
+    log "Using local file paths from .env.development for local development"
+    # Extract file path variables from .env.development
+    local_data_files_path=$(grep -E "^DATA_FILES_PATH=" ".env.development" 2>/dev/null | cut -d'=' -f2- || echo "")
+    local_dir_base=$(grep -E "^DIR_BASE=" ".env.development" 2>/dev/null | cut -d'=' -f2- || echo "")
+    local_dir_vehicle=$(grep -E "^DIR_VEHICLE=" ".env.development" 2>/dev/null | cut -d'=' -f2- || echo "")
+    local_dir_buyer=$(grep -E "^DIR_BUYER=" ".env.development" 2>/dev/null | cut -d'=' -f2- || echo "")
+    
+    # Update runtime env with local paths if they exist
+    # Note: For Docker containers, DATA_FILES_PATH will be overridden by Docker detection in config.ts
+    if [[ -n "$local_data_files_path" ]]; then
+      # Escape backslashes for sed
+      escaped_path=$(echo "$local_data_files_path" | sed 's/\\/\\\\/g')
+      sed -i -e "s|^DATA_FILES_PATH=.*|DATA_FILES_PATH=$escaped_path|" "$RUNTIME_ENV"
+    fi
+    if [[ -n "$local_dir_base" ]]; then
+      # Escape backslashes for sed
+      escaped_path=$(echo "$local_dir_base" | sed 's/\\/\\\\/g')
+      sed -i -e "s|^DIR_BASE=.*|DIR_BASE=$escaped_path|" "$RUNTIME_ENV"
+    fi
+    if [[ -n "$local_dir_vehicle" ]]; then
+      sed -i -e "s|^DIR_VEHICLE=.*|DIR_VEHICLE=$local_dir_vehicle|" "$RUNTIME_ENV"
+    fi
+    if [[ -n "$local_dir_buyer" ]]; then
+      sed -i -e "s|^DIR_BUYER=.*|DIR_BUYER=$local_dir_buyer|" "$RUNTIME_ENV"
+    fi
+    
+    # Set environment variable for Docker volume mapping
+    if [[ -n "$local_data_files_path" ]]; then
+      export LOCAL_DATA_FILES_PATH="$local_data_files_path"
+      log "Set LOCAL_DATA_FILES_PATH=$local_data_files_path for Docker volume mapping"
+    fi
+  else
+    log "Using file paths from $ENV_FILE for remote/production environment"
+  fi
+
   # Ensure 1310 is free or handle.
   who_listens_port >/dev/null 2>&1 || true
   if who_listens_port | grep -q LISTEN; then
@@ -226,7 +264,7 @@ start(){
   fi
 
   # Finally start app (HOST port 1310 is hardcoded in compose)
-  log "Starting app container (will map host 1310 -> container 4000)..."
+  log "Starting app container (will map host 1310 -> container 1310)..."
   docker compose -p "$PROJECT" -f "$COMPOSE_BASE" --env-file "${RUNTIME_ENV}" up -d app || {
     err "docker compose up failed. See logs."
     docker compose -p "$PROJECT" -f "$COMPOSE_BASE" --env-file "${RUNTIME_ENV}" ps || true
@@ -235,7 +273,7 @@ start(){
 
   log "Done. Containers (filtered):"
   docker ps --filter "name=${PROJECT_PREFIX}" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-  log "App should be reachable on host port ${HOST_PORT} -> container 4000"
+  log "App should be reachable on host port ${HOST_PORT} -> container 1310"
 }
 
 stop(){

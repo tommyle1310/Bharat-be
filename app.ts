@@ -33,11 +33,11 @@ export function createApp(): Application {
 
   // Static files
   // Local public directory (backend-specific static files)
-  // Accessible via: http://localhost:4000/public/filename.ext
+  // Accessible via: http://localhost:1310/public/filename.ext
   app.use(config.static.publicUrl, express.static(config.static.publicPath));
   
   // External data-files directory (sibling to backend)
-  // Accessible via: http://localhost:4000/data-files/filename.ext
+  // Accessible via: http://localhost:1310/data-files/filename.ext
   // This serves files from kmsg/data-files/ directory
   app.use(config.static.dataFilesUrl, express.static(config.static.dataFilesPath));
 
@@ -45,6 +45,15 @@ export function createApp(): Application {
   app.get('/health', async (_req: Request, res: Response) => {
     const redisOk = await checkRedisHealth();
     res.json({ status: 'ok', redis: redisOk ? 'up' : 'down' });
+  });
+
+  // Root info
+  app.get('/', (_req: Request, res: Response) => {
+    res.json({
+      message: 'KMSG Buyer Service',
+      health: '/health',
+      apiBase: `/${API_PREFIX}`,
+    });
   });
 
   // API routes

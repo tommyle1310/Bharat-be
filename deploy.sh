@@ -55,7 +55,7 @@ if [ ! -f .env ]; then
 # KMSG Backend Environment Configuration
 NODE_ENV=production
 HOST=0.0.0.0
-PORT=4000
+PORT=1310
 
 # Database Configuration
 DB_HOST=mysql
@@ -106,10 +106,10 @@ docker-compose ps
 
 # Test health endpoint
 print_status "Testing health endpoint..."
-if curl -f http://localhost:4000/health > /dev/null 2>&1; then
+if curl -f http://localhost:1310/health > /dev/null 2>&1; then
     print_status "✅ Health check passed! Backend is running successfully."
-    print_status "🌐 Backend is available at: http://localhost:4000"
-    print_status "📊 Health check: http://localhost:4000/health"
+    print_status "🌐 Backend is available at: http://localhost:1310"
+    print_status "📊 Health check: http://localhost:1310/health"
 else
     print_error "❌ Health check failed. Check logs with: docker-compose logs app"
     exit 1

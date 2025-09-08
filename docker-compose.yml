@@ -1,22 +1,60 @@
 version: "3.8"
 services:
+  mysql:
+    image: mysql:8
+    container_name: indus_auction_system_buyer_service_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: prod_indus_db
+      MYSQL_USER: indus_app_user
+      MYSQL_PASSWORD: IndusProd
+    restart: unless-stopped
+    ports:
+      - "3308:3306"
+    volumes:
+      - indus_mysql_data:/var/lib/mysql
+    networks:
+      - indus_buyer_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      retries: 5
+      timeout: 5s
+
+  redis:
+    image: redis:7-alpine
+    container_name: indus_auction_system_buyer_service_redis
+    restart: unless-stopped
+    ports:
+      - "6381:6379"
+    networks:
+      - indus_buyer_net
+
   app:
     build: .
     container_name: indus_auction_system_buyer_service_backend
     restart: always
-    # always map host 1310 -> container 4000
     ports:
       - "1310:1310"
     env_file:
-      - .env.test
+      - .env.runtime
+    volumes:
+      # Mount local data-files directory for local development
+      - "${LOCAL_DATA_FILES_PATH:-/tmp/data-files}:/app/data-files:ro"
+    depends_on:
+      mysql:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:1310/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
     networks:
       - indus_buyer_net
+
+volumes:
+  indus_mysql_data:
 
 networks:
   indus_buyer_net:

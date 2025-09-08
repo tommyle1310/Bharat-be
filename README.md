@@ -6,7 +6,7 @@ Create a `.env` file based on the following keys:
 ```
 NODE_ENV=development
 HOST=0.0.0.0
-PORT=4000
+PORT=1310
 
 # CORS: comma separated list or *
 CORS_ORIGIN=*

@@ -4,12 +4,12 @@ This backend now serves static files from two locations:
 
 ## 1. Local Public Directory
 - **Path**: `kmsg/backend/public/`
-- **URL**: `http://localhost:4000/public/`
+- **URL**: `http://localhost:1310/public/`
 - **Use case**: Backend-specific static files
 
 ## 2. External Data Files Directory
 - **Path**: `kmsg/data-files/` (sibling to backend)
-- **URL**: `http://localhost:4000/data-files/`
+- **URL**: `http://localhost:1310/data-files/`
 - **Use case**: Vehicle images, manager photos, and other data files
 
 ## Configuration
@@ -41,13 +41,13 @@ PUBLIC_URL=/custom-public
 ### 1. Accessing Files Directly
 ```
 # Vehicle image
-GET http://localhost:4000/data-files/vehicles/123/image1.jpg
+GET http://localhost:1310/data-files/vehicles/123/image1.jpg
 
 # Manager photo
-GET http://localhost:4000/data-files/managers/456/profile.jpg
+GET http://localhost:1310/data-files/managers/456/profile.jpg
 
 # Public file
-GET http://localhost:4000/public/logo.png
+GET http://localhost:1310/public/logo.png
 ```
 
 ### 2. Using Utility Functions

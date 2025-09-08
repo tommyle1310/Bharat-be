@@ -66,10 +66,10 @@ docker-compose ps
 
 # Test health endpoint
 print_status "Testing buyer-service health endpoint..."
-if curl -f http://localhost:4000/health > /dev/null 2>&1; then
+if curl -f http://localhost:1310/health > /dev/null 2>&1; then
     print_status "✅ Buyer-Service auto-deployment completed successfully!"
-    print_status "🌐 Buyer-Service is available at: http://localhost:4000"
-    print_status "📊 Health check: http://localhost:4000/health"
+    print_status "🌐 Buyer-Service is available at: http://localhost:1310"
+    print_status "📊 Health check: http://localhost:1310/health"
 else
     print_error "❌ Buyer-Service health check failed after deployment"
     print_error "Check logs with: docker-compose logs app"

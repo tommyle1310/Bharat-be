@@ -267,6 +267,7 @@ export async function getVehiclesByGroup(
       v.vehicle_id,
       v.auction_end_dttm AS end_time,
       v.odometer_reading AS odometer,
+      COALESCE(v.vehicle_image_id, 1) AS img_index,
       ft.fuel_type AS fuel,
       v.ownership_serial,
       mk.make_name AS make,
@@ -304,7 +305,7 @@ export async function getVehiclesByGroup(
   }
 
   const [rows] = await db.query<RowDataPacket[]>(sql, params);
-  console.log('check rows', rows)
+  console.log('check rows', rows?.[0]?.img_index)
   return rows.map((r) => ({
     vehicle_id: String(r.vehicle_id),
     end_time: r.end_time ? new Date(r.end_time).toISOString() : null,
@@ -320,7 +321,7 @@ export async function getVehiclesByGroup(
     manufacture_year: r.manufacture_year ?? null,
     main_image: r.main_image ?? DEFAULT_IMG,
     vehicleId: r.vehicle_id,
-    imgIndex: r.vehicle_image_id ?? 1,
+    imgIndex: (r as any).img_index ?? 1,
     status: r.status ?? null,
     bid_amount: r.bid_amount != null ? String(r.bid_amount) : null,
     manager_name: r.manager_name ?? null,
@@ -389,6 +390,7 @@ export async function searchVehiclesByGroup(
       v.vehicle_id,
       v.auction_end_dttm AS end_time,
       v.odometer_reading AS odometer,
+      COALESCE(v.vehicle_image_id, 1) AS img_index,
       ft.fuel_type AS fuel,
       v.ownership_serial,
       mk.make_name AS make,
@@ -405,7 +407,6 @@ export async function searchVehiclesByGroup(
       ? AS manager_image,
       ? AS main_image,
       v.vehicle_state_id AS state_rto,
-      v.vehicle_image_id
     FROM vehicles v
     ${join}
     WHERE ${where} AND ${searchCondition}
@@ -462,7 +463,7 @@ export async function searchVehiclesByGroup(
       manufacture_year: r.manufacture_year ?? null,
       main_image: r.main_image ?? DEFAULT_IMG,
       vehicleId: r.vehicle_id,
-      imgIndex: r.vehicle_image_id ?? 1,
+      imgIndex: Number((r as any).img_index) || 1,
       status: r.status ?? null,
       bid_amount: r.bid_amount != null ? String(r.bid_amount) : null,
       manager_name: r.manager_name ?? null,
@@ -658,6 +659,7 @@ export async function filterVehiclesByGroup(
       v.auction_end_dttm AS end_time,
       v.odometer_reading AS odometer,
       ft.fuel_type AS fuel,
+      v.vehicle_image_id,
       os.ownership AS ownership_label,
       mk.make_name AS make,
       vmi.img_extension AS img_extension,
@@ -673,7 +675,6 @@ export async function filterVehiclesByGroup(
       ? AS manager_image,
       ? AS main_image,
       v.vehicle_state_id AS state_rto,
-      v.vehicle_image_id
     FROM vehicles v
     ${join}
     WHERE ${whereClause}
