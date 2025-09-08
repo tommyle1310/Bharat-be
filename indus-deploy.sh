@@ -270,6 +270,10 @@ start(){
     docker compose "${COMPOSE_FILES[@]}" --env-file "$RUNTIME_ENV" up -d mysql || true
   fi
 
+  # Rebuild image to ensure latest code is used
+  log "Building latest app image..."
+  docker compose -p "$PROJECT" -f "$COMPOSE_BASE" build app || true
+
   # Finally start app (HOST port 1310 is hardcoded in compose)
   log "Starting app container (will map host 1310 -> container 1310)..."
   # Enforce low resource usage via compose deploy limits

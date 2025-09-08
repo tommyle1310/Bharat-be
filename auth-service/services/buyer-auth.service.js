@@ -9,12 +9,42 @@ function hashPassword(password, salt) {
 }
 
 exports.register = async (req, res) => {
-  const { phone, name, password, category, address, state_id, city_id, aadhaar_number, pan_number, company_name } = req.body;
+  const { phone, name, email, password, category, address, state_id, city_id, aadhaar_number, pan_number, company_name , pin_number } = req.body || {};
+
+  if (!phone || !name || !password) {
+    logger.warn('Registration validation failed: missing required fields');
+    return res.status(400).json({ message: 'phone, name, and password are required' });
+  }
+
   const salt = crypto.randomBytes(16).toString('hex');
   const hashedPwd = hashPassword(password, salt);
 
   try {
-    await authRepo.createBuyer(name, phone, hashedPwd, salt, category, address, state_id, city_id, aadhaar_number, pan_number, company_name);
+    // Coerce undefined to null for optional fields to satisfy MySQL driver
+    const safeCategory = category ?? null;
+    const safeAddress = address ?? null;
+    const safeStateId = state_id ?? null;
+    const safeCityId = city_id ?? null;
+    const safeAadhaar = aadhaar_number ?? null;
+    const safePan = pan_number ?? null;
+    const safeCompany = company_name ?? null;
+    const safePincode = pin_number ?? null;
+
+    await authRepo.createBuyer(
+      name,
+      email,
+      phone,
+      hashedPwd,
+      salt,
+      safeCategory,
+      safeAddress,
+      safeStateId,
+      safeCityId,
+      safeAadhaar,
+      safePan,
+      safeCompany,
+      safePincode
+    );
     logger.info(`Buyer registered with phone ${phone}`);
     res.status(201).json({ message: 'Buyer registered' });
   } catch (err) {
@@ -24,8 +54,13 @@ exports.register = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
-  const { phone, password } = req.body;
+  const { phone, password } = req.body || {};
   logger.info(`Login attempt for phone: ${phone}`);
+
+  if (!phone || !password) {
+    logger.warn('Login validation failed: phone or password missing');
+    return res.status(400).json({ message: 'phone and password are required' });
+  }
 
   try {
     const user = await authRepo.getBuyerByPhone(phone);
@@ -40,8 +75,8 @@ exports.login = async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const token = generateToken({ id: user.buyerId, userType: 'buyer', phoneNo: user.phone });
-    const refreshToken = generateRefreshToken({ id: user.buyerId, userType: 'buyer', phoneNo: user.phone });
+    const token = generateToken({ id: user.id, userType: 'buyer', phoneNo: user.mobile });
+    const refreshToken = generateRefreshToken({ id: user.id, userType: 'buyer', phoneNo: user.mobile });
     logger.info(`Login successful for phone: ${phone}`);
     res.json({ token, refreshToken, category: user.category_id });
   } catch (err) {

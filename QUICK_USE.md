@@ -4,7 +4,7 @@
 
 ### Local Development (Windows)
 ```powershell
-# 1. Start development with hot reload
+# 1. Start development with hot reload (nodemon)
 .\start-dev.ps1
 
 # 2. Stop when done
@@ -46,7 +46,7 @@
 - ✅ Local file paths: `D:\jobs\upwork\kmsg\data-files`
 - ✅ Images accessible at: `http://localhost:1310/data-files/vehicles/1/1.jpg`
 
-### Commands
+### Commands (PowerShell)
 ```powershell
 # Start development
 .\start-dev.ps1
@@ -61,6 +61,16 @@ npm run db:migrate
 npm run db:seed
 ```
 
+### If you prefer Git Bash on Windows
+```bash
+# Use a Windows path for the volume mount
+export LOCAL_DATA_FILES_PATH='/d/jobs/upwork/kmsg/data-files'
+
+# Start/Stop stack from Git Bash
+./indus-deploy.sh start --env .env.test
+./indus-deploy.sh stop
+```
+
 ---
 
 ## 🌐 Remote Server (Ubuntu)
@@ -70,6 +80,14 @@ npm run db:seed
 2. **Install dependencies**: `npm install`
 3. **Configure .env.test** with remote database
 4. **Start production**: `./indus-deploy.sh start --env .env.test`
+   - This now always rebuilds the app image to pick up your latest code
+   - If you still see old code, force a clean start:
+     ```bash
+     ./indus-deploy.sh stop
+     docker rm -f indus_auction_system_buyer_service_backend indus_auction_system_buyer_service_redis indus_auction_system_buyer_service_mysql 2>/dev/null || true
+     docker image rm -f indus_auction_system_buyer_service-app 2>/dev/null || true
+     ./indus-deploy.sh start --env .env.test
+     ```
 
 ### What happens:
 - ✅ Uses remote database from `.env.test`
@@ -79,6 +97,9 @@ npm run db:seed
 
 ### Commands
 ```bash
+chmod +x indus-deploy.sh
+
+
 # Start production
 ./indus-deploy.sh start --env .env.test
 
@@ -107,13 +128,12 @@ npm run db:seed
 
 npm run test runs on your HOST (not inside Docker). Make sure Redis/DB hostnames are resolvable from your host.
 
-### Option A — Use remote DB from .env.test (recommended)
+### Option A — Use remote DB from .env.test (recommended, PowerShell)
 ```powershell
 # 1) Ensure stack is running (redis will be local, DB is remote per .env.test)
 ./indus-deploy.sh start --env .env.test
 
 # 2) Override Redis for your local process (use the mapped host port 6381)
-# using powershell
 $env:REDIS_HOST="127.0.0.1"; $env:REDIS_PORT="6381"; npm run test
 # DB stays remote as defined in .env.test
 
@@ -121,7 +141,16 @@ $env:REDIS_HOST="127.0.0.1"; $env:REDIS_PORT="6381"; npm run test
 $env:LOCAL_DATA_FILES_PATH="D:\\jobs\\upwork\\kmsg\\data-files"; npm run test
 ```
 
-### Option B — Use local DB + local Redis
+### Option A (Git Bash)
+```bash
+./indus-deploy.sh start --env .env.test
+export REDIS_HOST=127.0.0.1 REDIS_PORT=6381
+# Optional local files path
+export LOCAL_DATA_FILES_PATH='/d/jobs/upwork/kmsg/data-files'
+npm run test
+```
+
+### Option B — Use local DB + local Redis (PowerShell)
 ```powershell
 # 1) Start with local DB preferred
 ./indus-deploy.sh start --env .env.test --prefer-local-db
@@ -133,7 +162,16 @@ $env:DB_USER="indus_app_user"; $env:DB_PASSWORD="IndusProd"; $env:DB_NAME="prod_
 npm run test
 ```
 
-### Option C — Regenerate a local-friendly .env.runtime for tests
+### Option B (Git Bash)
+```bash
+./indus-deploy.sh start --env .env.test --prefer-local-db
+export REDIS_HOST=127.0.0.1 REDIS_PORT=6381
+export DB_HOST=127.0.0.1 DB_PORT=3308
+export DB_USER=indus_app_user DB_PASSWORD=IndusProd DB_NAME=prod_indus_db
+npm run test
+```
+
+### Option C — Regenerate a local-friendly .env.runtime for tests (PowerShell)
 ```powershell
 # Copy remote env, then rewrite Redis to localhost
 Copy-Item .env.test .env.runtime -Force
@@ -143,6 +181,12 @@ Copy-Item .env.test .env.runtime -Force
 } | Set-Content .env.runtime
 
 npm run test
+```
+
+### Run bash script from PowerShell (if PS can’t execute .sh)
+```powershell
+& "C:\Program Files\Git\bin\bash.exe" -lc "./indus-deploy.sh start --env .env.test"
+& "C:\Program Files\Git\bin\bash.exe" -lc "./indus-deploy.sh stop"
 ```
 
 Tip:
@@ -194,13 +238,13 @@ docker restart indus_auction_system_buyer_service_mysql
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-### ❌ "Docker containers won't start"
-**Fix**:
+### ❌ "Docker containers won't start" (Windows Git Bash shows: mkdir C:\Program Files\Git\home: Access is denied.)
+Cause: LOCAL_DATA_FILES_PATH points to a Linux-style /home path. On Git Bash, /home maps to C:\\Program Files\\Git\\home.
+Fix:
 ```bash
-# Clean restart
+export LOCAL_DATA_FILES_PATH='/d/jobs/upwork/kmsg/data-files'
 ./indus-deploy.sh stop
-docker system prune -f
-./indus-deploy.sh start --env .env.test --prefer-local_db
+./indus-deploy.sh start --env .env.test
 ```
 
 ---
