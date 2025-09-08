@@ -348,15 +348,15 @@ async function seedBuyers(conn: Connection) {
     const full = i <= 2;
     const name = `Buyer ${i}`;
     const mobile = full ? `+1999000${1000 + i}` : `+1999000${2000 + i}`;
-    const business_vertical = i % 2 === 0 ? 'A' : 'B';
+    const category_id = i % 2 === 0 ? 10 : 20;
     const company_name = full ? `Company ${i}` : null;
     const email = full ? `buyer${i}@example.com` : null;
     const address = full ? `Street ${i}` : null;
     const buyer_status = 1;
     await conn.execute(
-      `INSERT INTO \`buyer\` (name, mobile, business_vertical, company_name, email, address, city_id, state_id, pincode, information_for_buyer, team_remarks, pan_number, aadhaar_number, security_deposit, bid_limit, expiry_date, renew_date, buyer_status, is_dummy, verify_status, police_verification_status, pan_verification_status, aadhaar_verification_status, is_logged_in, gst_no, aadhar_doc_id, pan_doc_id, pcc_doc_id, gst_certificate_doc_id, other_doc_id, img_extn_aadhaar_front, img_extn_aadhaar_back, img_extn_pan, img_extn_cancelled_cheque, img_extn_pcc, img_extn_gst, img_extn_other, added_on, added_by)
+      `INSERT INTO \`buyer\` (name, mobile, category_id, company_name, email, address, city_id, state_id, pincode, information_for_buyer, team_remarks, pan_number, aadhaar_number, security_deposit, bid_limit, expiry_date, renew_date, buyer_status, is_dummy, verify_status, police_verification_status, pan_verification_status, aadhaar_verification_status, is_logged_in, gst_no, aadhar_doc_id, pan_doc_id, pcc_doc_id, gst_certificate_doc_id, other_doc_id, img_extn_aadhaar_front, img_extn_aadhaar_back, img_extn_pan, img_extn_cancelled_cheque, img_extn_pcc, img_extn_gst, img_extn_other, added_on, added_by)
        VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, DATE_ADD(CURDATE(), INTERVAL 1 YEAR), NULL, ?, 0, 0, 0, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NOW(), 1)`,
-      [name, mobile, business_vertical, company_name, email, address, buyer_status]
+      [name, mobile, category_id, company_name, email, address, buyer_status]
     );
   }
 }

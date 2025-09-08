@@ -90,6 +90,15 @@ npm run db:seed
 
 # View logs
 ./indus-deploy.sh logs
+
+# Resource limits (auto-applied)
+# - App: 0.4 CPU, 256MB RAM
+# - MySQL: 0.4 CPU, 768MB RAM
+# - Redis: 0.2 CPU, 128MB RAM
+# This fits your EC2 (2 vCPU, ~2GB RAM) with margin.
+# Tip: If under memory pressure, restart just Redis/MySQL:
+#   docker restart indus_auction_system_buyer_service_redis
+#   docker restart indus_auction_system_buyer_service_mysql
 ```
 
 ---

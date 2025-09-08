@@ -9,6 +9,11 @@ services:
       MYSQL_USER: indus_app_user
       MYSQL_PASSWORD: IndusProd
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.40"
+          memory: 768M
     ports:
       - "3308:3306"
     volumes:
@@ -25,6 +30,11 @@ services:
     image: redis:7-alpine
     container_name: indus_auction_system_buyer_service_redis
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.20"
+          memory: 128M
     ports:
       - "6381:6379"
     networks:
@@ -34,6 +44,11 @@ services:
     build: .
     container_name: indus_auction_system_buyer_service_backend
     restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.40"
+          memory: 256M
     ports:
       - "1310:1310"
     env_file:

@@ -65,6 +65,8 @@ REDIS_HOST="$(get_env REDIS_HOST)"
 REDIS_PORT="$(get_env REDIS_PORT)"; REDIS_PORT="${REDIS_PORT:-6379}"
 DB_HOST="$(get_env DB_HOST)"
 DB_PORT="$(get_env DB_PORT)"; DB_PORT="${DB_PORT:-3306}"
+# optional: data files path from env file (for bind mount)
+DATA_FILES_PATH_FROM_ENV="$(get_env DATA_FILES_PATH)"
 
 # check tcp connect
 check_tcp(){
@@ -227,6 +229,11 @@ start(){
     fi
   else
     log "Using file paths from $ENV_FILE for remote/production environment"
+    # Ensure container can see host data files dir defined in .env.test
+    if [[ -n "$DATA_FILES_PATH_FROM_ENV" ]]; then
+      export LOCAL_DATA_FILES_PATH="$DATA_FILES_PATH_FROM_ENV"
+      log "Set LOCAL_DATA_FILES_PATH=$DATA_FILES_PATH_FROM_ENV for Docker volume mapping"
+    fi
   fi
 
   # Ensure 1310 is free or handle.
@@ -265,6 +272,7 @@ start(){
 
   # Finally start app (HOST port 1310 is hardcoded in compose)
   log "Starting app container (will map host 1310 -> container 1310)..."
+  # Enforce low resource usage via compose deploy limits
   docker compose -p "$PROJECT" -f "$COMPOSE_BASE" --env-file "${RUNTIME_ENV}" up -d app || {
     err "docker compose up failed. See logs."
     docker compose -p "$PROJECT" -f "$COMPOSE_BASE" --env-file "${RUNTIME_ENV}" ps || true

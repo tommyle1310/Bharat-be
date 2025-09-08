@@ -170,10 +170,10 @@ CREATE TABLE IF NOT EXISTS `staff` (
 
 -- Buyer
 CREATE TABLE IF NOT EXISTS `buyer` (
-  `buyer_id` int NOT NULL AUTO_INCREMENT,
+  `id` int NOT NULL AUTO_INCREMENT,
   `name` varchar(100) NOT NULL,
   `mobile` varchar(15) NOT NULL,
-  `business_vertical` char(1) NOT NULL,
+  `category_id` int NOT NULL,
   `company_name` varchar(100) DEFAULT NULL,
   `case_option_id` tinyint DEFAULT NULL,
   `email` varchar(100) DEFAULT NULL,
@@ -214,7 +214,7 @@ CREATE TABLE IF NOT EXISTS `buyer` (
   `img_extn_other` varchar(5) DEFAULT NULL,
   `added_on` datetime NOT NULL,
   `added_by` int NOT NULL,
-  PRIMARY KEY (`buyer_id`),
+  PRIMARY KEY (`id`),
   KEY `mobile` (`mobile`),
   KEY `name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
