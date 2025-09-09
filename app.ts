@@ -18,6 +18,8 @@ import stateRoutes from './modules/states/state.routes';
 import cityRoutes from './modules/cities/city.routes';
 import staffRoutes from './modules/staffs/staff.routes';
 import buyerRoutes from './modules/buyers/buyer.routes';
+import buyerBidRoutes from './modules/buyer_bids/buyer_bids.routes';
+import autoBidRoutes from './modules/auto_bid/auto_bid.routes';
 import { API_PREFIX } from './types/app';
 
 export function createApp(): Application {
@@ -68,6 +70,8 @@ export function createApp(): Application {
   app.use(`/${API_PREFIX}/cities`, cityRoutes);
   app.use(`/${API_PREFIX}/staffs`, staffRoutes);
   app.use(`/${API_PREFIX}/buyers`, buyerRoutes);
+  app.use(`/${API_PREFIX}/buyer-bids`, buyerBidRoutes);
+  app.use(`/${API_PREFIX}/auto-bid`, autoBidRoutes);
   // app.use(`/${API_PREFIX}/vehicle-types`, vehicleTypeRoutes);
   // app.use(`/${API_PREFIX}/ownership-serials`, ownershipSerialRoutes);
 

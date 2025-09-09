@@ -6,7 +6,7 @@ export async function list(limit?: number, offset?: number) {
   return dao.listVehicles(limit, offset);
 }
 
-export async function get(id: number) {
+export async function get(id: number, buyerId?: number) {
   return dao.getVehicleById(id);
 }
 
@@ -29,15 +29,15 @@ export async function groups(): Promise<VehicleGroupItem[]> {
   return dao.getGroups();
 }
 
-export async function listByGroup(type: 'state' | 'auction_status' | 'all', title: string, limit?: number, offset?: number): Promise<VehicleListItem[]> {
-  return dao.getVehiclesByGroup(type, title, limit, offset);
+export async function listByGroup(type: 'state' | 'auction_status' | 'all', title: string, limit?: number, offset?: number, buyerId?: number): Promise<VehicleListItem[]> {
+  return dao.getVehiclesByGroup(type, title, limit, offset, buyerId);
 }
 
-export async function searchVehicles(keyword: string, limit?: number, offset?: number): Promise<dao.VehicleItem[]> {
-  return dao.searchVehicles(keyword, limit, offset);
+export async function searchVehicles(keyword: string, limit?: number, offset?: number, buyerId?: number): Promise<dao.VehicleItem[]> {
+  return dao.searchVehicles(keyword, limit, offset, buyerId);
 }
-export async function searchVehiclesByGroup(keyword: string, type: 'state' | 'auction_status' | 'all', title: string, limit?: number, offset?: number): Promise<dao.VehicleListItem[]> {
-  return dao.searchVehiclesByGroup(keyword, type, title, limit, offset);
+export async function searchVehiclesByGroup(keyword: string, type: 'state' | 'auction_status' | 'all', title: string, limit?: number, offset?: number, buyerId?: number): Promise<dao.VehicleListItem[]> {
+  return dao.searchVehiclesByGroup(keyword, type, title, limit, offset, buyerId);
 }
 
 export async function filterVehiclesByGroup(
@@ -48,9 +48,10 @@ export async function filterVehiclesByGroup(
   ownership: string,
   rcAvailable: string,
   limit?: number,
-  offset?: number
+  offset?: number,
+  buyerId?: number
 ): Promise<dao.VehicleListItem[]> {
-  return dao.filterVehiclesByGroup(type, title, vehicleType, vehicleFuel, ownership, rcAvailable, limit, offset);
+  return dao.filterVehiclesByGroup(type, title, vehicleType, vehicleFuel, ownership, rcAvailable, limit, offset, buyerId);
 }
 
 export async function getOwnershipTypes() {

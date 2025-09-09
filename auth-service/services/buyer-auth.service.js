@@ -16,20 +16,16 @@ function hashPasswordWithHexSalt(password, hexSalt) {
 }
 
 exports.register = async (req, res) => {
-  const { phone, name, email, password, category, address, state_id, city_id, aadhaar_number, pan_number, company_name , pin_number } = req.body || {};
+  const { phone, name, email, business_vertical, address, state_id, city_id, aadhaar_number, pan_number, company_name , pin_number } = req.body || {};
 
-  if (!phone || !name || !password || !email) {
+  if (!phone || !name || !email || !business_vertical) {
     logger.warn('Registration validation failed: missing required fields');
-    return res.status(400).json({ message: 'phone, name, email, and password are required' });
+    return res.status(400).json({ message: 'phone, name, email, and business_vertical are required' });
   }
-
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hashedPwd = hashPassword(password, salt);
-  logger.info(`Buyer register digests: salt=${salt.slice(0,12)} hash=${hashedPwd.slice(0,12)} len=${hashedPwd.length}`);
 
   try {
     // Coerce undefined to null for optional fields to satisfy MySQL driver
-    const safeCategory = category ?? null;
+    const safeBusinessVertical = business_vertical ?? null; // 'I' | 'B' | 'A'
     const safeAddress = address ?? null;
     const safeStateId = state_id ?? null;
     const safeCityId = city_id ?? null;
@@ -42,9 +38,7 @@ exports.register = async (req, res) => {
       name,
       email,
       phone,
-      hashedPwd,
-      salt,
-      safeCategory,
+      safeBusinessVertical,
       safeAddress,
       safeStateId,
       safeCityId,
@@ -54,16 +48,7 @@ exports.register = async (req, res) => {
       safePincode
     );
     // Verify what got stored
-    try {
-      const stored = await authRepo.getBuyerByPhone(phone);
-      if (stored) {
-        const storedPwd = Buffer.isBuffer(stored.password) ? stored.password.toString('utf8') : stored.password;
-        const rehash = hashPassword(password, salt);
-        logger.info(`Buyer post-register check: storedPwd=${String(storedPwd).slice(0,12)} rehash=${rehash.slice(0,12)} len=${String(storedPwd).length}`);
-      }
-    } catch (e) {
-      logger.warn(`Post-register check failed for ${phone}: ${e.message}`);
-    }
+    // No password handling here; managed by a separate service
     logger.info(`Buyer registered with phone ${phone}`);
     res.status(201).json({ message: 'Buyer registered' });
   } catch (err) {

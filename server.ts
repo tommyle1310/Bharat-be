@@ -4,10 +4,12 @@ import { createApp } from './app';
 import { initSocket } from './config/socket';
 import { config } from './config/config';
 import { disconnectRedis } from './config/redis';
+import { startAutoBidRunner } from './services/auto-bid.runner';
 
 const app = createApp();
 const server = http.createServer(app);
 initSocket(server);
+startAutoBidRunner();
 
 server.listen(config.port, config.host, () => {
   console.log(`HTTP listening on http://${config.host}:${config.port} in ${config.env}`);

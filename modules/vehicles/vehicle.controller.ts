@@ -13,7 +13,8 @@ export async function get(req: Request, res: Response) {
   if (Number.isNaN(id)) {
     return res.status(400).json({ message: 'Invalid vehicle id' });
   }
-  const item = await service.get(id);
+  const buyerId = req.buyer?.id;
+  const item = await service.get(id, buyerId);
   if (!item) return res.status(404).json({ message: 'Vehicle not found' });
   res.json(item);
 }
@@ -64,7 +65,8 @@ export async function listByGroup(req: Request, res: Response) {
     throw new Error('Invalid type. Must be "state", "auction_status", or "all"');
   }
 
-  const data = await service.listByGroup(type as 'state' | 'auction_status' | 'all', title, limit, offset);
+  const buyerId = req.buyer?.id;
+  const data = await service.listByGroup(type as 'state' | 'auction_status' | 'all', title, limit, offset, buyerId);
   res.json(data);
 }
 
@@ -72,7 +74,8 @@ export async function search(req: Request, res: Response) {
   const keyword = String(req.query.keyword);
   const limit = Number(req.query.limit ?? 50);
   const offset = Number(req.query.offset ?? 0);
-  const data = await service.searchVehicles(keyword, limit, offset);
+  const buyerId = req.buyer?.id;
+  const data = await service.searchVehicles(keyword, limit, offset, buyerId);
   res.json(data);
 }
 export async function searchByGroup(req: Request, res: Response) {
@@ -81,7 +84,8 @@ export async function searchByGroup(req: Request, res: Response) {
   const title = String(req.query.title);
   const limit = Number(req.query.limit ?? 50);
   const offset = Number(req.query.offset ?? 0);
-  const data = await service.searchVehiclesByGroup(keyword, type as 'state' | 'auction_status' | 'all', title, limit, offset);
+  const buyerId = req.buyer?.id;
+  const data = await service.searchVehiclesByGroup(keyword, type as 'state' | 'auction_status' | 'all', title, limit, offset, buyerId);
   res.json(data);
 }
 
@@ -89,7 +93,7 @@ export async function filterByGroup(req: Request, res: Response) {
   const type = String(req.query.type || '').toLowerCase();
   const title = String(req.query.title);
   const vehicleType = String(req.query.vehicle_type || '');
-  const vehicleFuel = String(req.query.vehicle_fuel || '');
+  const vehicleFuel = String(req.query.fuel || req.query.vehicle_fuel || '');
   const ownership = String(req.query.ownership || '');
   const rcAvailable = String(req.query.rc_available || '');
   const limit = Number(req.query.limit ?? 50);
@@ -104,6 +108,7 @@ export async function filterByGroup(req: Request, res: Response) {
     return res.status(400).json({ message: 'Invalid type. Must be "state", "auction_status", or "all"' });
   }
 
+  const buyerId = req.buyer?.id;
   const data = await service.filterVehiclesByGroup(
     type as 'state' | 'auction_status' | 'all', 
     title, 
@@ -112,7 +117,8 @@ export async function filterByGroup(req: Request, res: Response) {
     ownership, 
     rcAvailable, 
     limit, 
-    offset
+    offset,
+    buyerId
   );
   res.json(data);
 }
