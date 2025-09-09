@@ -23,10 +23,42 @@ exports.getBuyerByPhone = async (mobile) => {
       "SELECT id, mobile, password, salt, category_id FROM buyers WHERE mobile = ?",
       [mobile]
     );
-    logger.info(`Fetched buyer by phone: ${mobile}`);
+    logger.info(`Fetched buyer by phone: ${mobile}, salt: ${users[0].salt}`);
     return users[0];
   } catch (err) {
     logger.error(`Error fetching buyer by phone ${mobile}: ${err.message}`);
+    throw err;
+  }
+};
+
+// Get buyer by email
+exports.getBuyerByEmail = async (email) => {
+  logger.info(`Fetching buyer by email: ${email}`);
+  try {
+    const [users] = await db.execute(
+      "SELECT id, name, email FROM buyers WHERE email = ?",
+      [email]
+    );
+    logger.info(`Fetched buyer by email: ${email}`);
+    return users[0];
+  } catch (err) {
+    logger.error(`Error fetching buyer by email ${email}: ${err.message}`);
+    throw err;
+  }
+};
+
+// Update buyer password (and salt) by email
+exports.updateBuyerPasswordByEmail = async (email, hashedPassword, salt) => {
+  logger.info(`Updating buyer password by email: ${email}`);
+  try {
+    const [result] = await db.execute(
+      "UPDATE buyers SET password = ?, salt = ? WHERE email = ?",
+      [hashedPassword, salt, email]
+    );
+    logger.info(`Updated password for buyer email: ${email}`);
+    return result;
+  } catch (err) {
+    logger.error(`Error updating password for email ${email}: ${err.message}`);
     throw err;
   }
 };
