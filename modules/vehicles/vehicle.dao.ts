@@ -406,7 +406,7 @@ export async function searchVehiclesByGroup(
       st.staff_id AS manager_id,
       ? AS manager_image,
       ? AS main_image,
-      v.vehicle_state_id AS state_rto,
+      v.vehicle_state_id AS state_rto
     FROM vehicles v
     ${join}
     WHERE ${where} AND ${searchCondition}
@@ -674,7 +674,7 @@ export async function filterVehiclesByGroup(
       st.staff_id AS manager_id,
       ? AS manager_image,
       ? AS main_image,
-      v.vehicle_state_id AS state_rto,
+      v.vehicle_state_id AS state_rto
     FROM vehicles v
     ${join}
     WHERE ${whereClause}

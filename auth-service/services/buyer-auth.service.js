@@ -11,9 +11,9 @@ function hashPassword(password, salt) {
 exports.register = async (req, res) => {
   const { phone, name, email, password, category, address, state_id, city_id, aadhaar_number, pan_number, company_name , pin_number } = req.body || {};
 
-  if (!phone || !name || !password) {
+  if (!phone || !name || !password || !email) {
     logger.warn('Registration validation failed: missing required fields');
-    return res.status(400).json({ message: 'phone, name, and password are required' });
+    return res.status(400).json({ message: 'phone, name, email, and password are required' });
   }
 
   const salt = crypto.randomBytes(16).toString('hex');
@@ -100,7 +100,7 @@ exports.logout = async (req, res) => {
   try {
     const decoded = await decodeAndVerifyToken(token);
     // console.log("decoded", decoded);
-    const redisKey = `auth:${decoded.id}:${decoded.userType}:${token}`;
+    const redisKey = `access:${decoded.id}:${decoded.userType}:${token}`;
 
     const deleted = await redis.del(redisKey);
 

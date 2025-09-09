@@ -2,7 +2,7 @@ import { Pool, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { getDb } from '../../config/database';
 import { Buyer } from './buyer.model';
 
-const TABLE = 'buyer';
+const TABLE = 'buyers';
 
 export async function list(limit = 100, offset = 0): Promise<Buyer[]> {
   const db: Pool = getDb();
@@ -13,6 +13,11 @@ export async function list(limit = 100, offset = 0): Promise<Buyer[]> {
 export async function getById(id: number): Promise<Buyer | null> {
   const db: Pool = getDb();
   const [rows] = await db.query<RowDataPacket[]>(`SELECT * FROM ${TABLE} WHERE id = ? LIMIT 1`, [id]);
+  return (rows[0] as unknown as Buyer) || null;
+}
+export async function getNameByMobile(mobile: string): Promise<Buyer | null> {
+  const db: Pool = getDb();
+  const [rows] = await db.query<RowDataPacket[]>(`SELECT name, id FROM ${TABLE} WHERE mobile = ? LIMIT 1`, [mobile]);
   return (rows[0] as unknown as Buyer) || null;
 }
 

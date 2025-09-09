@@ -5,7 +5,7 @@ exports.createBuyer = async (name, email, mobile, pwd, salt, category, address, 
   logger.info(`Creating buyer with phone: ${mobile}`);
   try {
     const result = await db.execute(
-      "INSERT INTO buyers (name, email mobile, password, salt, category_id, address, state_id, city_id, aadhaar_number, pan_number, company_name, pincode, expiry_date, buyer_status, verify_status, is_dummy, notification_opened, added_on, police_verification_status, pan_verification_status, aadhaar_verification_status, is_logged_in) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), 1, 0, 0, 0, NOW(), 0, 0, 0, 0)",
+      "INSERT INTO buyers (name, email, mobile, password, salt, category_id, address, state_id, city_id, aadhaar_number, pan_number, company_name, pincode, expiry_date, buyer_status, verify_status, is_dummy, notification_opened, added_on, police_verification_status, pan_verification_status, aadhaar_verification_status, is_logged_in) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), 1, 0, 0, 0, NOW(), 0, 0, 0, 0)",
       [name, email, mobile, pwd, salt, category, address, state_id, city_id, aadhaar_number, pan_number, company_name, pincode]
     );
     logger.info(`Buyer created with phone: ${mobile}`);

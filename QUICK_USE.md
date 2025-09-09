@@ -131,7 +131,7 @@ npm run test runs on your HOST (not inside Docker). Make sure Redis/DB hostnames
 ### Option A — Use remote DB from .env.test (recommended, PowerShell)
 ```powershell
 # 1) Ensure stack is running (redis will be local, DB is remote per .env.test)
-./indus-deploy.sh start --env .env.test
+& "C:\Program Files\Git\bin\bash.exe" -lc "./indus-deploy.sh start --env .env.test"
 
 # 2) Override Redis for your local process (use the mapped host port 6381)
 $env:REDIS_HOST="127.0.0.1"; $env:REDIS_PORT="6381"; npm run test
