@@ -1,5 +1,7 @@
 import { Pool, RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { getDb } from "../../config/database";
+import { getRedis } from "../../config/redis";
+import { getIO } from "../../config/socket";
 
 export interface BuyerBidRecord {
   bid_id?: number;
@@ -137,6 +139,29 @@ export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
      VALUES (?, ?, ?, ?, ?, ?, NOW(), 0)`,
     [bid.vehicle_id, bid.buyer_id, bid.bid_amt, bid.is_surrogate, bid.bid_mode, bid.top_bid_at_insert]
   );
+  // After successful insert, set Redis key for realtime consumers
+  try {
+    const redis = getRedis();
+    const payload = {
+      vehicleId: bid.vehicle_id,
+      buyerId: bid.buyer_id,
+      bidAmt: bid.bid_amt,
+      isTopBidder: bid.top_bid_at_insert === 1,
+    };
+    await redis.set("vehicle:bid:update", JSON.stringify(payload));
+  } catch (e) {
+    console.error("[insertBuyerBid] Failed to set Redis key vehicle:bid:update", e);
+  }
+
+  // Emit isWinning if this insertion became top (best-effort; losing will be handled by controller/runner where previous top is known)
+  try {
+    if (bid.top_bid_at_insert === 1) {
+      const io = getIO();
+      io.to(String(bid.buyer_id)).emit('isWinning', { vehicleId: bid.vehicle_id });
+    }
+  } catch (e) {
+    console.error('[insertBuyerBid] Failed Socket.IO emit isWinning', e);
+  }
   return res.insertId;
 }
 

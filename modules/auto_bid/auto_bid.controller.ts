@@ -13,6 +13,12 @@ export async function setAutoBid(req: Request, res: Response) {
   if ([buyerId, vehicleId, startAmt, maxBid, stepAmt].some((v) => Number.isNaN(v))) {
     return res.status(400).json({ message: 'buyer_id, vehicle_id, start_amount, max_bid, step_amount required' });
   }
+
+  // Enforce minimum bid difference
+  if (maxBid - startAmt < 1000) {
+    return res.status(400).json({ message: 'Bid difference must be at least 1000' });
+  }
+
   const vehicle = await vehicleDao.getVehicleById(vehicleId);
   if (!vehicle) return res.status(404).json({ message: 'Vehicle not found' });
   if (vehicle.base_price != null && startAmt < Number(vehicle.base_price)) {
@@ -87,7 +93,11 @@ export async function updateAutoBid(req: Request, res: Response) {
 
   // Validate input parameters
   const updateData: any = {};
-  if (start_amount !== undefined) {
+  const hasStart = start_amount !== undefined;
+  const hasMax = max_bid !== undefined;
+  const hasStep = step_amount !== undefined;
+
+  if (hasStart) {
     const startAmt = Number(start_amount);
     if (isNaN(startAmt)) {
       return res.status(400).json({ message: 'Invalid start_amount' });
@@ -95,7 +105,7 @@ export async function updateAutoBid(req: Request, res: Response) {
     updateData.bid_start_amt = startAmt;
   }
 
-  if (max_bid !== undefined) {
+  if (hasMax) {
     const maxBid = Number(max_bid);
     if (isNaN(maxBid)) {
       return res.status(400).json({ message: 'Invalid max_bid' });
@@ -103,7 +113,7 @@ export async function updateAutoBid(req: Request, res: Response) {
     updateData.max_bid_amt = maxBid;
   }
 
-  if (step_amount !== undefined) {
+  if (hasStep) {
     const stepAmt = Number(step_amount);
     if (isNaN(stepAmt)) {
       return res.status(400).json({ message: 'Invalid step_amount' });
@@ -112,7 +122,7 @@ export async function updateAutoBid(req: Request, res: Response) {
   }
 
   // Recalculate max_steps and pending_steps if start_amount, max_bid, or step_amount changed
-  if (updateData.bid_start_amt !== undefined || updateData.max_bid_amt !== undefined || updateData.step_amt !== undefined) {
+  if (hasStart || hasMax || hasStep) {
     try {
       const existingAutoBid = await dao.getAutoBidByVehicleAndBuyer(vehicleId, buyerId);
       if (!existingAutoBid) {
@@ -120,11 +130,16 @@ export async function updateAutoBid(req: Request, res: Response) {
       }
 
       const startAmt = updateData.bid_start_amt ?? existingAutoBid.bid_start_amt;
-      const maxBid = updateData.max_bid_amt ?? existingAutoBid.max_bid_amt;
+      const maxBidAmt = updateData.max_bid_amt ?? existingAutoBid.max_bid_amt;
       const stepAmt = updateData.step_amt ?? existingAutoBid.step_amt;
 
-      updateData.max_steps = Math.ceil((maxBid - startAmt) / Math.max(stepAmt, 1));
-      updateData.pending_steps = Math.ceil((maxBid - startAmt) / Math.max(stepAmt, 1));
+      // Enforce minimum bid difference
+      if (maxBidAmt - startAmt < 1000) {
+        return res.status(400).json({ message: 'Bid difference must be at least 1000' });
+      }
+
+      updateData.max_steps = Math.ceil((maxBidAmt - startAmt) / Math.max(stepAmt, 1));
+      updateData.pending_steps = Math.ceil((maxBidAmt - startAmt) / Math.max(stepAmt, 1));
     } catch (error) {
       console.error('Error fetching existing auto bid:', error);
       return res.status(500).json({ message: 'Internal server error' });

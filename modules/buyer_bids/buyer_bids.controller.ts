@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import * as dao from './buyer_bids.dao';
 import * as vehicleDao from '../vehicles/vehicle.dao';
+import { getRedis } from '../../config/redis';
+import { getIO } from '../../config/socket';
 
 export async function history(req: Request, res: Response) {
   const buyerId = Number(req.params.buyerId);
@@ -51,6 +53,7 @@ export async function manualBid(req: Request, res: Response) {
   // Get current top bid for this vehicle
   const currentTopBid = await dao.getTopBidForVehicle(vehicleId);
   const currentTopBidAmount = currentTopBid?.amount ?? 0;
+  const previousTopBuyerId = currentTopBid?.buyer_id ?? null;
   
   // Determine if this bid becomes the new top bid
   const isTopBid = bidAmt > currentTopBidAmount;
@@ -74,6 +77,30 @@ export async function manualBid(req: Request, res: Response) {
     
     // Update other buyer bids to set top_bid_at_insert to 0
     await dao.updateOtherBuyerBidsTopBidStatus(vehicleId, buyerId);
+
+    // Publish winner update so server can forward via Socket.IO
+    try {
+      const redis = getRedis();
+      const winnerPayload = {
+        vehicleId: vehicleId,
+        winnerBuyerId: buyerId,
+        loserBuyerId: previousTopBuyerId && previousTopBuyerId !== buyerId ? previousTopBuyerId : null,
+      };
+      await redis.publish('vehicle:winner:update', JSON.stringify(winnerPayload));
+    } catch (e) {
+      console.error('[manualBid] Failed to publish vehicle:winner:update', e);
+    }
+
+    // Direct emits for immediate UX (targeted rooms by buyerId)
+    try {
+      const io = getIO();
+      io.to(String(buyerId)).emit('isWinning', { vehicleId });
+      if (previousTopBuyerId && previousTopBuyerId !== buyerId) {
+        io.to(String(previousTopBuyerId)).emit('isLosing', { vehicleId });
+      }
+    } catch (e) {
+      console.error('[manualBid] Failed to emit isWinning/isLosing via Socket.IO', e);
+    }
   }
 
   res.status(201).json({ message: 'Bid placed' });

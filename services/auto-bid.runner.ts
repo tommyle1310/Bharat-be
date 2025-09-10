@@ -1,8 +1,10 @@
-import { listActiveAutoBids } from '../modules/auto_bid/auto_bid.dao';
-import { getVehicleById } from '../modules/vehicles/vehicle.dao';
-import { getTopBidForVehicle, insertBuyerBid } from '../modules/buyer_bids/buyer_bids.dao';
-import { Pool } from 'mysql2/promise';
-import { getDb } from '../config/database';
+import { Pool } from "mysql2/promise";
+import { getDb } from "../config/database";
+import { listActiveAutoBids } from "../modules/auto_bid/auto_bid.dao";
+import { getVehicleById } from "../modules/vehicles/vehicle.dao";
+import { getTopBidForVehicle, insertBuyerBid, updateOtherBuyerBidsTopBidStatus, getLatestBuyerBidForVehicle } from "../modules/buyer_bids/buyer_bids.dao";
+import { getRedis } from "../config/redis";
+import { getIO } from "../config/socket";
 
 export function startAutoBidRunner() {
   const intervalMs = 10_000;
@@ -46,142 +48,189 @@ export function startAutoBidRunner() {
 
         const top = await getTopBidForVehicle(vehicleId);
         let topAmt = top ? top.amount : Number(vehicle.base_price ?? 0);
-        const topBidderId = top ? top.buyer_id : null;
+        let topBidderId = top ? top.buyer_id : null;
 
         console.log(`[AUTO-BID-RUNNER] Vehicle ${vehicleId} details:`);
         console.log(`  - Base price: ${vehicle.base_price}`);
         console.log(`  - Max price: ${vehicle.max_price}`);
         console.log(`  - Current top bid: ${topAmt} (by buyer ${topBidderId})`);
 
+        // Initialization: ensure a buyer_bids row exists for this auto-bid
+        try {
+          const existingBuyerLastBid = await getLatestBuyerBidForVehicle(buyerId, vehicleId);
+          if (existingBuyerLastBid == null) {
+            const startAmt = Number(ab.bid_start_amt);
+            const vehicleBase = Number(vehicle.base_price ?? 0);
+            const vehicleMaxAllowed = Number(vehicle.max_price ?? Number.MAX_SAFE_INTEGER);
+            const initialBidAmt = Math.max(startAmt, vehicleBase);
+
+            console.log(`[AUTO-BID-RUNNER][INIT] No existing buyer_bids found for buyer ${buyerId}, vehicle ${vehicleId}`);
+            console.log(`[AUTO-BID-RUNNER][INIT] Will attempt initial insert with amount ${initialBidAmt}`);
+
+            // Validate within buyer's budget and vehicle constraints
+            if (initialBidAmt > maxBidAmt) {
+              console.log(`[AUTO-BID-RUNNER][INIT] Skip initial insert: initialBidAmt(${initialBidAmt}) > maxBidAmt(${maxBidAmt})`);
+            } else if (initialBidAmt >= vehicleMaxAllowed) {
+              console.log(`[AUTO-BID-RUNNER][INIT] Skip initial insert: initialBidAmt(${initialBidAmt}) >= vehicle max allowed (${vehicleMaxAllowed})`);
+            } else {
+              const willBeTopBid = initialBidAmt > topAmt || (initialBidAmt === topAmt && topBidderId !== buyerId);
+              const topBidAtInsert = willBeTopBid ? 1 : 0;
+
+              await insertBuyerBid({
+                vehicle_id: vehicleId,
+                buyer_id: buyerId,
+                bid_amt: initialBidAmt,
+                is_surrogate: 1,
+                bid_mode: 'A',
+                top_bid_at_insert: topBidAtInsert,
+                user_id: 0,
+              });
+              totalBidsPlaced++;
+              console.log(`[AUTO-BID-RUNNER][INIT] ✅ Inserted initial auto-bid ${initialBidAmt} for buyer ${buyerId} on vehicle ${vehicleId} (top at insert: ${topBidAtInsert})`);
+
+              if (willBeTopBid) {
+                try {
+                  await updateOtherBuyerBidsTopBidStatus(vehicleId, buyerId);
+                  console.log(`[AUTO-BID-RUNNER][INIT] ✅ Updated other buyer bids to set top_bid_at_insert = 0`);
+                } catch (updateError) {
+                  console.error(`[AUTO-BID-RUNNER][INIT] ❌ Failed to update other buyer bids:`, updateError);
+                }
+              }
+
+              lastBidAmt = initialBidAmt;
+
+              const refreshedTop = await getTopBidForVehicle(vehicleId);
+              topAmt = refreshedTop ? refreshedTop.amount : Number(vehicle.base_price ?? 0);
+              topBidderId = refreshedTop ? refreshedTop.buyer_id : null;
+            }
+          }
+        } catch (initErr) {
+          console.error(`[AUTO-BID-RUNNER][INIT] Error during initialization for buyer ${buyerId}, vehicle ${vehicleId}:`, initErr);
+        }
+
         let processed = false;
         let bidsPlaced = 0;
         const maxAllowed = Number(vehicle.max_price ?? Number.MAX_SAFE_INTEGER);
 
-        console.log(`[AUTO-BID-RUNNER] ===== DETAILED CONDITION ANALYSIS FOR BUYER ${buyerId} =====`);
-        console.log(`[AUTO-BID-RUNNER] Current Values:`);
-        console.log(`  - lastBidAmt: ${lastBidAmt} (type: ${typeof lastBidAmt})`);
-        console.log(`  - topAmt: ${topAmt} (type: ${typeof topAmt})`);
-        console.log(`  - stepAmt: ${stepAmt} (type: ${typeof stepAmt})`);
-        console.log(`  - maxBidAmt: ${maxBidAmt} (type: ${typeof maxBidAmt})`);
-        console.log(`  - pendingSteps: ${pendingSteps} (type: ${typeof pendingSteps})`);
-        console.log(`  - maxAllowed: ${maxAllowed} (type: ${typeof maxAllowed})`);
-        console.log(`[AUTO-BID-RUNNER] Calculated Values:`);
-        console.log(`  - lastBidAmt + stepAmt: ${lastBidAmt + stepAmt}`);
-        console.log(`  - maxBidAmt - lastBidAmt: ${maxBidAmt - lastBidAmt}`);
-        console.log(`  - maxAllowed - lastBidAmt: ${maxAllowed - lastBidAmt}`);
-        console.log(`[AUTO-BID-RUNNER] Condition Evaluation:`);
-        console.log(`  - Condition 1: lastBidAmt < topAmt`);
-        console.log(`    * ${lastBidAmt} < ${topAmt} = ${lastBidAmt < topAmt}`);
-        console.log(`    * Reason: ${lastBidAmt < topAmt ? 'PASS - Need to outbid current top bid' : 'FAIL - Already at or above top bid'}`);
-        console.log(`  - Condition 2: lastBidAmt + stepAmt <= maxBidAmt`);
-        console.log(`    * ${lastBidAmt} + ${stepAmt} <= ${maxBidAmt} = ${lastBidAmt + stepAmt <= maxBidAmt}`);
-        console.log(`    * Reason: ${lastBidAmt + stepAmt <= maxBidAmt ? 'PASS - Next bid within max budget' : 'FAIL - Next bid would exceed max budget'}`);
-        console.log(`  - Condition 3: pendingSteps > 0`);
-        console.log(`    * ${pendingSteps} > 0 = ${pendingSteps > 0}`);
-        console.log(`    * Reason: ${pendingSteps > 0 ? 'PASS - Has remaining bid steps' : 'FAIL - No more bid steps available'}`);
-        console.log(`  - Condition 4: lastBidAmt + stepAmt < maxAllowed`);
-        console.log(`    * ${lastBidAmt} + ${stepAmt} < ${maxAllowed} = ${lastBidAmt + stepAmt < maxAllowed}`);
-        console.log(`    * Reason: ${lastBidAmt + stepAmt < maxAllowed ? 'PASS - Next bid within vehicle max price' : 'FAIL - Next bid would exceed vehicle max price'}`);
-        console.log(`[AUTO-BID-RUNNER] Overall Condition Result:`);
-        const condition1 = lastBidAmt < topAmt;
-        const condition2 = lastBidAmt + stepAmt <= maxBidAmt;
-        const condition3 = pendingSteps > 0;
-        const condition4 = lastBidAmt + stepAmt < maxAllowed;
-        const overallResult = condition1 && condition2 && condition3 && condition4;
-        console.log(`  - ALL CONDITIONS: ${condition1} && ${condition2} && ${condition3} && ${condition4} = ${overallResult}`);
-        console.log(`  - Will ${overallResult ? 'ENTER' : 'SKIP'} bid loop`);
-        console.log(`[AUTO-BID-RUNNER] ===== END CONDITION ANALYSIS =====`);
+        while (true) {
+          const needToAct = (lastBidAmt < topAmt) || (lastBidAmt === topAmt && topBidderId !== buyerId);
+          if (!needToAct) break;
+          if (!(pendingSteps > 0)) break;
 
-        while (
-          lastBidAmt < topAmt &&
-          lastBidAmt + stepAmt <= maxBidAmt &&
-          pendingSteps > 0 &&
-          lastBidAmt + stepAmt < maxAllowed
-        ) {
+          // Always bid by one step
+          const nextBidAmt = lastBidAmt + stepAmt;
+
+          // Respect budget and vehicle limits
+          if (nextBidAmt > maxBidAmt) break;
+          if (nextBidAmt >= maxAllowed) break;
+
           processed = true;
           pendingSteps -= 1;
-          lastBidAmt = lastBidAmt + stepAmt;
-          bidsPlaced++;
 
-          console.log(`[AUTO-BID-RUNNER] ===== BID LOOP ITERATION #${bidsPlaced} =====`);
+          console.log(`[AUTO-BID-RUNNER] ===== BID LOOP ITERATION #${bidsPlaced + 1} =====`);
           console.log(`[AUTO-BID-RUNNER] Before bid placement:`);
-          console.log(`  - Previous lastBidAmt: ${lastBidAmt - stepAmt}`);
-          console.log(`  - New lastBidAmt: ${lastBidAmt}`);
+          console.log(`  - Previous lastBidAmt: ${lastBidAmt}`);
+          console.log(`  - Next bid amount (one step): ${nextBidAmt}`);
           console.log(`  - Previous pendingSteps: ${pendingSteps + 1}`);
           console.log(`  - New pendingSteps: ${pendingSteps}`);
           console.log(`  - Current topAmt: ${topAmt}`);
+          console.log(`  - Current topBidderId: ${topBidderId}`);
 
           try {
-            // Determine if this bid will be the new top bid
-            const willBeTopBid = lastBidAmt > topAmt;
+            const willBeTopBid = nextBidAmt > topAmt || (nextBidAmt === topAmt && topBidderId !== buyerId);
             const topBidAtInsert = willBeTopBid ? 1 : 0;
-            
-            console.log(`[AUTO-BID-RUNNER] Attempting to place bid with data:`);
-            console.log(`  - vehicle_id: ${vehicleId}`);
-            console.log(`  - buyer_id: ${buyerId}`);
-            console.log(`  - bid_amt: ${lastBidAmt}`);
-            console.log(`  - is_surrogate: 1`);
-            console.log(`  - bid_mode: 'A'`);
-            console.log(`  - top_bid_at_insert: ${topBidAtInsert} (will be top bid: ${willBeTopBid})`);
-            console.log(`  - user_id: 0`);
-            console.log(`  - Current top bid: ${topAmt}`);
-            console.log(`  - New bid amount: ${lastBidAmt}`);
-            console.log(`  - Comparison: ${lastBidAmt} > ${topAmt} = ${willBeTopBid}`);
             
             await insertBuyerBid({
               vehicle_id: vehicleId,
               buyer_id: buyerId,
-              bid_amt: lastBidAmt,
+              bid_amt: nextBidAmt,
               is_surrogate: 1,
               bid_mode: 'A',
               top_bid_at_insert: topBidAtInsert,
               user_id: 0,
             });
-            console.log(`[AUTO-BID-RUNNER] ✅ Successfully placed bid ${lastBidAmt} for buyer ${buyerId} on vehicle ${vehicleId}`);
-            
-            // If this bid becomes the new top bid, update other buyer bids
+            bidsPlaced++;
+            console.log(`[AUTO-BID-RUNNER] ✅ Successfully placed bid ${nextBidAmt} for buyer ${buyerId} on vehicle ${vehicleId}`);
+
+            // Notify realtime consumers via Redis key and possible winner change
+            try {
+              const redis = getRedis();
+              await redis.set("vehicle:bid:update", JSON.stringify({
+                vehicleId,
+                buyerId,
+                bidAmt: nextBidAmt,
+                isTopBidder: topBidAtInsert === 1,
+              }));
+            } catch (notifyErr) {
+              console.error('[AUTO-BID-RUNNER] Failed to set Redis key vehicle:bid:update', notifyErr);
+            }
+
             if (willBeTopBid) {
-              console.log(`[AUTO-BID-RUNNER] This bid becomes the new top bid, updating other buyer bids...`);
               try {
-                const { updateOtherBuyerBidsTopBidStatus } = await import('../modules/buyer_bids/buyer_bids.dao');
                 await updateOtherBuyerBidsTopBidStatus(vehicleId, buyerId);
-                console.log(`[AUTO-BID-RUNNER] ✅ Successfully updated other buyer bids to set top_bid_at_insert = 0`);
+                console.log(`[AUTO-BID-RUNNER] ✅ Updated other buyer bids to set top_bid_at_insert = 0`);
               } catch (updateError) {
                 console.error(`[AUTO-BID-RUNNER] ❌ Failed to update other buyer bids:`, updateError);
               }
+
+              // Emit to winner/loser for instant feedback
+              try {
+                const io = getIO();
+                io.to(String(buyerId)).emit('isWinning', { vehicleId });
+                if (topBidderId && topBidderId !== buyerId) {
+                  io.to(String(topBidderId)).emit('isLosing', { vehicleId });
+                }
+              } catch (e) {
+                console.error('[AUTO-BID-RUNNER] Failed to emit isWinning/isLosing via Socket.IO', e);
+              }
             }
+
+            // Update last amount
+            lastBidAmt = nextBidAmt;
           } catch (bidError) {
             console.error(`[AUTO-BID-RUNNER] ❌ Failed to place bid for buyer ${buyerId} on vehicle ${vehicleId}:`, bidError);
-            console.error(`[AUTO-BID-RUNNER] Error details:`, {
-              message: (bidError as any).message,
-              code: (bidError as any).code,
-              errno: (bidError as any).errno,
-              sqlState: (bidError as any).sqlState,
-              sqlMessage: (bidError as any).sqlMessage
-            });
-            break; // Stop processing this auto-bid if we can't place bids
+            break;
           }
 
-          // Update top bid info after each bid
-          console.log(`[AUTO-BID-RUNNER] Fetching updated top bid information...`);
+          // Refresh top bid after each placement
           const newTop = await getTopBidForVehicle(vehicleId);
           const newTopAmt = newTop ? newTop.amount : Number(vehicle.base_price ?? 0);
           const newTopBidderId = newTop ? newTop.buyer_id : null;
-          
+
           console.log(`[AUTO-BID-RUNNER] Top bid update:`);
           console.log(`  - Previous topAmt: ${topAmt}`);
           console.log(`  - New topAmt: ${newTopAmt}`);
           console.log(`  - Previous topBidderId: ${topBidderId}`);
           console.log(`  - New topBidderId: ${newTopBidderId}`);
-          console.log(`  - Top bid changed: ${topAmt !== newTopAmt ? 'YES' : 'NO'}`);
-          
-          // Update topAmt for next iteration
+
           topAmt = newTopAmt;
-          
+          topBidderId = newTopBidderId;
+
+          // If winner changed, publish event so server can forward via Socket.IO
+          try {
+            if (newTopBidderId && newTopBidderId !== buyerId) {
+              const redis = getRedis();
+              await redis.publish('vehicle:winner:update', JSON.stringify({
+                vehicleId,
+                winnerBuyerId: newTopBidderId,
+                loserBuyerId: buyerId,
+              }));
+            } else if (newTopBidderId === buyerId) {
+              const redis = getRedis();
+              await redis.publish('vehicle:winner:update', JSON.stringify({
+                vehicleId,
+                winnerBuyerId: buyerId,
+                loserBuyerId: null,
+              }));
+            }
+          } catch (pubErr) {
+            console.error('[AUTO-BID-RUNNER] Failed to publish vehicle:winner:update', pubErr);
+          }
+
           console.log(`[AUTO-BID-RUNNER] ===== END BID LOOP ITERATION #${bidsPlaced} =====`);
         }
 
-        if (processed) {
+        if (processed || bidsPlaced > 0) {
           console.log(`[AUTO-BID-RUNNER] Updating auto-bid record for buyer ${buyerId}, vehicle ${vehicleId}:`);
           console.log(`  - New pending steps: ${pendingSteps}`);
           console.log(`  - New last bid amount: ${lastBidAmt}`);
@@ -194,31 +243,12 @@ export function startAutoBidRunner() {
             );
             console.log(`[AUTO-BID-RUNNER] Successfully updated auto-bid record`);
             totalProcessed++;
-            totalBidsPlaced += bidsPlaced;
           } catch (updateError) {
             console.error(`[AUTO-BID-RUNNER] Failed to update auto-bid record:`, updateError);
           }
         } else {
           console.log(`[AUTO-BID-RUNNER] ===== NO BIDS PLACED - CONDITION ANALYSIS =====`);
-          console.log(`[AUTO-BID-RUNNER] Final condition check for buyer ${buyerId} on vehicle ${vehicleId}:`);
-          console.log(`  - Condition 1: lastBidAmt(${lastBidAmt}) < topAmt(${topAmt}) = ${lastBidAmt < topAmt}`);
-          console.log(`  - Condition 2: lastBidAmt(${lastBidAmt}) + stepAmt(${stepAmt}) <= maxBidAmt(${maxBidAmt}) = ${lastBidAmt + stepAmt <= maxBidAmt}`);
-          console.log(`  - Condition 3: pendingSteps(${pendingSteps}) > 0 = ${pendingSteps > 0}`);
-          console.log(`  - Condition 4: lastBidAmt(${lastBidAmt}) + stepAmt(${stepAmt}) < maxAllowed(${maxAllowed}) = ${lastBidAmt + stepAmt < maxAllowed}`);
-          console.log(`[AUTO-BID-RUNNER] Reasons for no bids:`);
-          if (!(lastBidAmt <= topAmt)) {
-            console.log(`  ❌ Already at or above top bid (${lastBidAmt} > ${topAmt})`);
-          }
-          if (!(lastBidAmt + stepAmt <= maxBidAmt)) {
-            console.log(`  ❌ Next bid would exceed max budget (${lastBidAmt + stepAmt} > ${maxBidAmt})`);
-          }
-          if (!(pendingSteps > 0)) {
-            console.log(`  ❌ No more bid steps available (${pendingSteps} <= 0)`);
-          }
-          if (!(lastBidAmt + stepAmt < maxAllowed)) {
-            console.log(`  ❌ Next bid would exceed vehicle max price (${lastBidAmt + stepAmt} >= ${maxAllowed})`);
-          }
-          console.log(`[AUTO-BID-RUNNER] ===== END NO BIDS ANALYSIS =====`);
+          console.log(`[AUTO-BID-RUNNER] Final state for buyer ${buyerId} on vehicle ${vehicleId}: lastBidAmt=${lastBidAmt}, topAmt=${topAmt}, topBidderId=${topBidderId}, pendingSteps=${pendingSteps}`);
         }
         
         console.log(`[AUTO-BID-RUNNER] Completed processing auto-bid for buyer ${buyerId}, vehicle ${vehicleId}`);
