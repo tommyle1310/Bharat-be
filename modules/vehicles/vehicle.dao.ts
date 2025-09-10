@@ -300,8 +300,9 @@ export async function getVehiclesByGroup(
       st.email AS manager_email,
       st.staff_id AS manager_id,
       ? AS manager_image,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN NULL WHEN bb.top_bid_at_insert = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
+      v.added_on,
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
     FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
     LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
@@ -322,6 +323,7 @@ export async function getVehiclesByGroup(
       )
     ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
     WHERE ${where}
+    GROUP BY v.vehicle_id
     ORDER BY v.added_on DESC
     LIMIT ? OFFSET ?
   `;
@@ -334,8 +336,18 @@ export async function getVehiclesByGroup(
     params = buyerId ? [MANAGER_IMG, buyerId, safeTitle, safeLimit, safeOffset] : [MANAGER_IMG, safeTitle, safeLimit, safeOffset];
   }
 
+  console.log('=== getVehiclesByGroup DEBUG ===');
+  console.log('SQL:', sql);
+  console.log('Params:', params);
+  console.log('buyerId:', buyerId);
+  console.log('type:', type);
+  console.log('title:', title);
+  
   const [rows] = await db.query<RowDataPacket[]>(sql, params);
-  return rows.map((r) => ({
+  console.log('Raw rows count:', rows.length);
+  console.log('Raw rows:', rows.map(r => ({ vehicle_id: r.vehicle_id, buyer_id: (r as any).buyer_id, top_bid_at_insert: (r as any).top_bid_at_insert })));
+  
+  const result = rows.map((r) => ({
     vehicle_id: String(r.vehicle_id),
     end_time: r.end_time ? new Date(r.end_time).toISOString() : null,
     odometer: r.odometer != null ? String(r.odometer) : null,
@@ -359,6 +371,12 @@ export async function getVehiclesByGroup(
     manager_image: r.manager_image ?? MANAGER_IMG,
     manager_id: r.manager_id != null ? String(r.manager_id) : null,
   }));
+  
+  console.log('Final result count:', result.length);
+  console.log('Final result vehicle_ids:', result.map(r => r.vehicle_id));
+  console.log('=== END getVehiclesByGroup DEBUG ===');
+  
+  return result;
 }
 
 export async function searchVehiclesByGroup(
@@ -438,8 +456,9 @@ export async function searchVehiclesByGroup(
       st.email AS manager_email,
       st.staff_id AS manager_id,
       ? AS manager_image,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN NULL WHEN bb.top_bid_at_insert = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
+      v.added_on,
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
     FROM vehicles v
     ${join}
     ${buyerId ? `LEFT JOIN (
@@ -454,6 +473,7 @@ export async function searchVehiclesByGroup(
       )
     ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
     WHERE ${where} AND ${searchCondition}
+    GROUP BY v.vehicle_id
     ORDER BY v.added_on DESC
     LIMIT ? OFFSET ?
   `;
@@ -482,13 +502,22 @@ export async function searchVehiclesByGroup(
   }
 
   try {
-    console.log('searchVehiclesByGroup SQL:', sql);
-    console.log('searchVehiclesByGroup Params:', params);
-    console.log('searchVehiclesByGroup type:', type);
-    console.log('searchVehiclesByGroup hasKeyword:', hasKeyword);
+    console.log('=== searchVehiclesByGroup DEBUG ===');
+    console.log('SQL:', sql);
+    console.log('Params:', params);
+    console.log('buyerId:', buyerId);
+    console.log('type:', type);
+    console.log('title:', title);
+    console.log('keyword:', keyword);
+    console.log('hasKeyword:', hasKeyword);
+    console.log('where:', where);
+    console.log('searchCondition:', searchCondition);
+    
     const [rows] = await db.query<RowDataPacket[]>(sql, params);
-    console.log('searchVehiclesByGroup rows:', rows.length);
-    return rows.map((r) => ({
+    console.log('Raw rows count:', rows.length);
+    console.log('Raw rows:', rows.map(r => ({ vehicle_id: r.vehicle_id, buyer_id: (r as any).buyer_id, top_bid_at_insert: (r as any).top_bid_at_insert })));
+    
+    const result = rows.map((r) => ({
       vehicle_id: String(r.vehicle_id),
       end_time: r.end_time ? new Date(r.end_time).toISOString() : null,
       odometer: r.odometer != null ? String(r.odometer) : null,
@@ -512,6 +541,12 @@ export async function searchVehiclesByGroup(
       manager_id: r.manager_id != null ? String(r.manager_id) : null,
       is_favorite: false,
     }));
+    
+    console.log('Final result count:', result.length);
+    console.log('Final result vehicle_ids:', result.map(r => r.vehicle_id));
+    console.log('=== END searchVehiclesByGroup DEBUG ===');
+    
+    return result;
   } catch (error: any) {
     console.error("[searchVehiclesByGroup] Error:", error.message);
     throw error;
@@ -544,8 +579,8 @@ export async function getVehicleDetails(
       st.email AS manager_email,
       st.staff_id AS manager_id,
       ? AS manager_image,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN NULL WHEN bb.top_bid_at_insert = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
     FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
     LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
@@ -565,6 +600,7 @@ export async function getVehicleDetails(
       )
     ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
     WHERE v.vehicle_id = ?
+    GROUP BY v.vehicle_id
     LIMIT 1`;
 
   const params = buyerId ? [MANAGER_IMG, buyerId, vehicleId] : [MANAGER_IMG, vehicleId];
@@ -724,8 +760,9 @@ export async function filterVehiclesByGroup(
       st.staff_id AS manager_id,
       ? AS manager_image,
       v.regs_no AS regs_no,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN NULL WHEN bb.top_bid_at_insert = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
+      v.added_on,
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
     FROM vehicles v
     ${join}
     ${buyerId ? `LEFT JOIN (
@@ -740,6 +777,7 @@ export async function filterVehiclesByGroup(
       )
     ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
     WHERE ${whereClause}
+    GROUP BY v.vehicle_id
     ORDER BY v.added_on DESC
     LIMIT ? OFFSET ?
   `;
@@ -752,8 +790,24 @@ export async function filterVehiclesByGroup(
   }
 
   try {
+    console.log('=== filterVehiclesByGroup DEBUG ===');
+    console.log('SQL:', sql);
+    console.log('Params:', params);
+    console.log('buyerId:', buyerId);
+    console.log('type:', type);
+    console.log('title:', title);
+    console.log('vehicleType:', vehicleType);
+    console.log('vehicleFuel:', vehicleFuel);
+    console.log('ownership:', ownership);
+    console.log('rcAvailable:', rcAvailable);
+    console.log('whereClause:', whereClause);
+    console.log('filterParams:', filterParams);
+    
     const [rows] = await db.query<RowDataPacket[]>(sql, params);
-    return rows.map((r) => ({
+    console.log('Raw rows count:', rows.length);
+    console.log('Raw rows:', rows.map(r => ({ vehicle_id: r.vehicle_id, buyer_id: (r as any).buyer_id, top_bid_at_insert: (r as any).top_bid_at_insert })));
+    
+    const result = rows.map((r) => ({
       vehicle_id: String(r.vehicle_id),
       end_time: r.end_time ? new Date(r.end_time).toISOString() : null,
       odometer: r.odometer != null ? String(r.odometer) : null,
@@ -777,6 +831,12 @@ export async function filterVehiclesByGroup(
       manager_id: r.manager_id != null ? String(r.manager_id) : null,
       is_favorite: false,
     }));
+    
+    console.log('Final result count:', result.length);
+    console.log('Final result vehicle_ids:', result.map(r => r.vehicle_id));
+    console.log('=== END filterVehiclesByGroup DEBUG ===');
+    
+    return result;
   } catch (error: any) {
     console.error("[filterVehiclesByGroup] Error:", error.message);
     throw error;

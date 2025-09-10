@@ -9,7 +9,7 @@ import { startAutoBidRunner } from './services/auto-bid.runner';
 const app = createApp();
 const server = http.createServer(app);
 initSocket(server);
-startAutoBidRunner();
+// startAutoBidRunner();
 
 server.listen(config.port, config.host, () => {
   console.log(`HTTP listening on http://${config.host}:${config.port} in ${config.env}`);

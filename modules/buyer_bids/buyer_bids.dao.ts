@@ -22,8 +22,7 @@ export async function getBuyerBidHistory(buyerId: number): Promise<any[]> {
   const DEFAULT_IMG = "https://images.unsplash.com/photo-1517673132405-a56a62b18caf?w=800";
   const MANAGER_IMG = "https://images.unsplash.com/photo-1519211975560-4ca611f5a72a?w=800";
 
-  const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT
+  const sql = `SELECT
       v.vehicle_id,
       v.auction_end_dttm AS end_time,
       v.odometer_reading AS odometer,
@@ -42,10 +41,10 @@ export async function getBuyerBidHistory(buyerId: number): Promise<any[]> {
       st.email AS manager_email,
       st.staff_id AS manager_id,
       ? AS manager_image,
-      CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END AS has_bidded,
-      CASE WHEN bb.top_bid_at_insert = 1 THEN 'Winning' ELSE 'Losing' END AS bidding_status,
-      bb.bid_amt AS user_bid_amount,
-      bb.created_dttm AS bid_created_dttm
+      CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END AS has_bidded,
+      CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN 'Winning' ELSE 'Losing' END AS bidding_status,
+      MAX(bb.bid_amt) AS user_bid_amount,
+      MAX(bb.created_dttm) AS bid_created_dttm
     FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
     LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
@@ -64,9 +63,19 @@ export async function getBuyerBidHistory(buyerId: number): Promise<any[]> {
         AND bb2.buyer_id = bb1.buyer_id
       )
     ) bb ON bb.vehicle_id = v.vehicle_id
-    ORDER BY bb.created_dttm DESC`,
-    [MANAGER_IMG, buyerId]
-  );
+    GROUP BY v.vehicle_id
+    ORDER BY MAX(bb.created_dttm) DESC`;
+
+  console.log('=== getBuyerBidHistory DEBUG ===');
+  console.log('SQL:', sql);
+  console.log('Params:', [MANAGER_IMG, buyerId]);
+  console.log('buyerId:', buyerId);
+
+  const [rows] = await db.query<RowDataPacket[]>(sql, [MANAGER_IMG, buyerId]);
+  
+  console.log('Raw rows count:', rows.length);
+  console.log('Raw rows vehicle_ids:', rows.map(r => r.vehicle_id));
+  console.log('=== END getBuyerBidHistory DEBUG ===');
   
   return rows.map((r) => ({
     vehicle_id: String(r.vehicle_id),
@@ -102,7 +111,7 @@ export async function getBuyerBidHistoryByVehicle(buyerId: number, vehicleId: nu
     `SELECT bid_id, vehicle_id, buyer_id, bid_amt, bid_mode, top_bid_at_insert, created_dttm
      FROM ${BUYER_BIDS_TABLE}
      WHERE buyer_id = ? AND vehicle_id = ?
-     ORDER BY created_dttm DESC`,
+     ORDER BY created_dttm DESC, bid_amt DESC`,
     [buyerId, vehicleId]
   );
   return rows;
