@@ -146,7 +146,6 @@ export interface VehicleListItem {
   odometer: string | null;
   fuel: string | null;
   owner_serial: string | null;
-  state_rto: string | null;
   state_code?: string | null;
   img_extension: string | null;
   make: string | null;
@@ -154,8 +153,9 @@ export interface VehicleListItem {
   variant: string | null;
   is_favorite: boolean;
   manufacture_year: string | null;
-  main_image: string | null;
-  status: string | null;
+  vehicleId: number;
+  imgIndex: number;
+  bidding_status: string | null;
   bid_amount: string | null;
   manager_name: string | null;
   manager_phone: string | null;
@@ -294,15 +294,14 @@ export async function getVehiclesByGroup(
       md.model_name AS model,
       vv.variant_name AS variant,
       v.manufacturing_year AS manufacture_year,
-      co.case_name AS status,
       COALESCE(v.expected_price, v.base_price) AS bid_amount,
       st.staff AS manager_name,
       st.phone AS manager_phone,
       st.email AS manager_email,
       st.staff_id AS manager_id,
       ? AS manager_image,
-      ? AS main_image,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded
+      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
+      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN NULL WHEN bb.top_bid_at_insert = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
     FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
     LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
@@ -311,7 +310,17 @@ export async function getVehiclesByGroup(
     LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
     ${join}
     LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
-    ${buyerId ? 'LEFT JOIN buyer_bids bb ON bb.vehicle_id = v.vehicle_id AND bb.buyer_id = ?' : ''}
+    ${buyerId ? `LEFT JOIN (
+      SELECT bb1.vehicle_id, bb1.buyer_id, bb1.top_bid_at_insert
+      FROM buyer_bids bb1
+      WHERE bb1.buyer_id = ?
+      AND bb1.created_dttm = (
+        SELECT MAX(bb2.created_dttm)
+        FROM buyer_bids bb2
+        WHERE bb2.vehicle_id = bb1.vehicle_id
+        AND bb2.buyer_id = bb1.buyer_id
+      )
+    ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
     WHERE ${where}
     ORDER BY v.added_on DESC
     LIMIT ? OFFSET ?
@@ -320,9 +329,9 @@ export async function getVehiclesByGroup(
   let params: any[];
 
   if (type === "all") {
-    params = buyerId ? [MANAGER_IMG, DEFAULT_IMG, buyerId, safeLimit, safeOffset] : [MANAGER_IMG, DEFAULT_IMG, safeLimit, safeOffset];
+    params = buyerId ? [MANAGER_IMG, buyerId, safeLimit, safeOffset] : [MANAGER_IMG, safeLimit, safeOffset];
   } else {
-    params = buyerId ? [MANAGER_IMG, DEFAULT_IMG, buyerId, safeTitle, safeLimit, safeOffset] : [MANAGER_IMG, DEFAULT_IMG, safeTitle, safeLimit, safeOffset];
+    params = buyerId ? [MANAGER_IMG, buyerId, safeTitle, safeLimit, safeOffset] : [MANAGER_IMG, safeTitle, safeLimit, safeOffset];
   }
 
   const [rows] = await db.query<RowDataPacket[]>(sql, params);
@@ -332,7 +341,6 @@ export async function getVehiclesByGroup(
     odometer: r.odometer != null ? String(r.odometer) : null,
     fuel: r.fuel ?? null,
     owner_serial: r.ownership_serial ?? null,
-    state_rto: r.state_rto ?? null,
     state_code: typeof r.regs_no === 'string' && r.regs_no.length >= 2 ? r.regs_no.substring(0,2) : null,
     has_bidded: (r as any).has_bidded === 1,
     make: r.make ?? null,
@@ -341,15 +349,14 @@ export async function getVehiclesByGroup(
     img_extension: r.img_extension ?? null,
     is_favorite: false,
     manufacture_year: r.manufacture_year ?? null,
-    main_image: r.main_image ?? DEFAULT_IMG,
     vehicleId: r.vehicle_id,
     imgIndex: (r as any).img_index ?? 1,
-    status: r.status ?? null,
+    bidding_status: r.bidding_status ?? null,
     bid_amount: r.bid_amount != null ? String(r.bid_amount) : null,
     manager_name: r.manager_name ?? null,
     manager_phone: r.manager_phone ?? null,
     manager_email: r.manager_email ?? null,
-    manager_image: r.manager_image ?? DEFAULT_IMG,
+    manager_image: r.manager_image ?? MANAGER_IMG,
     manager_id: r.manager_id != null ? String(r.manager_id) : null,
   }));
 }
@@ -425,19 +432,27 @@ export async function searchVehiclesByGroup(
       md.model_name AS model,
       vv.variant_name AS variant,
       v.manufacturing_year AS manufacture_year,
-      co.case_name AS status,
       COALESCE(v.expected_price, v.base_price) AS bid_amount,
       st.staff AS manager_name,
       st.phone AS manager_phone,
       st.email AS manager_email,
       st.staff_id AS manager_id,
       ? AS manager_image,
-      ? AS main_image,
-      v.vehicle_state_id AS state_rto,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded
+      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
+      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN NULL WHEN bb.top_bid_at_insert = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
     FROM vehicles v
     ${join}
-    ${buyerId ? 'LEFT JOIN buyer_bids bb ON bb.vehicle_id = v.vehicle_id AND bb.buyer_id = ?' : ''}
+    ${buyerId ? `LEFT JOIN (
+      SELECT bb1.vehicle_id, bb1.buyer_id, bb1.top_bid_at_insert
+      FROM buyer_bids bb1
+      WHERE bb1.buyer_id = ?
+      AND bb1.created_dttm = (
+        SELECT MAX(bb2.created_dttm)
+        FROM buyer_bids bb2
+        WHERE bb2.vehicle_id = bb1.vehicle_id
+        AND bb2.buyer_id = bb1.buyer_id
+      )
+    ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
     WHERE ${where} AND ${searchCondition}
     ORDER BY v.added_on DESC
     LIMIT ? OFFSET ?
@@ -449,7 +464,6 @@ export async function searchVehiclesByGroup(
     // For "all" type, no title parameter is needed since where = "1=1"
     params = [
       MANAGER_IMG,
-      DEFAULT_IMG,
       ...(buyerId ? [buyerId] : []),
       ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
       safeLimit,
@@ -459,7 +473,6 @@ export async function searchVehiclesByGroup(
     // For "state" and "auction_status" types, title parameter is needed
     params = [
       MANAGER_IMG,
-      DEFAULT_IMG,
       ...(buyerId ? [buyerId] : []),
       safeTitle,
       ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
@@ -481,7 +494,6 @@ export async function searchVehiclesByGroup(
       odometer: r.odometer != null ? String(r.odometer) : null,
       fuel: r.fuel ?? null,
       owner_serial: r.ownership_serial ?? null,
-      state_rto: r.state_rto ?? null,
       state_code: typeof r.regs_no === 'string' && r.regs_no.length >= 2 ? r.regs_no.substring(0,2) : null,
       has_bidded: (r as any).has_bidded === 1,
       make: r.make ?? null,
@@ -489,15 +501,14 @@ export async function searchVehiclesByGroup(
       img_extension: r.img_extension ?? null,
       variant: r.variant ?? null,
       manufacture_year: r.manufacture_year ?? null,
-      main_image: r.main_image ?? DEFAULT_IMG,
       vehicleId: r.vehicle_id,
       imgIndex: Number((r as any).img_index) || 1,
-      status: r.status ?? null,
+      bidding_status: r.bidding_status ?? null,
       bid_amount: r.bid_amount != null ? String(r.bid_amount) : null,
       manager_name: r.manager_name ?? null,
       manager_phone: r.manager_phone ?? null,
       manager_email: r.manager_email ?? null,
-      manager_image: r.manager_image ?? DEFAULT_IMG,
+      manager_image: r.manager_image ?? MANAGER_IMG,
       manager_id: r.manager_id != null ? String(r.manager_id) : null,
       is_favorite: false,
     }));
@@ -512,14 +523,14 @@ export async function getVehicleDetails(
   buyerId?: number
 ): Promise<VehicleListItem | null> {
   const db: Pool = getDb();
-  const DEFAULT_IMG = DEFAULT_IMAGES.VEHICLE; // Fallback to external URL
+  const MANAGER_IMG = DEFAULT_IMAGES.MANAGER; // Fallback to external URL
 
-  const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT
+  const sql = `SELECT
       v.vehicle_id,
       v.auction_end_dttm AS end_time,
       v.odometer_reading AS odometer,
       v.regs_no AS regs_no,
+      COALESCE(v.vehicle_image_id, 1) AS img_index,
       ft.fuel_type AS fuel,
       v.ownership_serial,
       mk.make_name AS make,
@@ -527,32 +538,38 @@ export async function getVehicleDetails(
       md.model_name AS model,
       vv.variant_name AS variant,
       v.manufacturing_year AS manufacture_year,
-      co.case_name AS status,
       COALESCE(v.expected_price, v.base_price) AS bid_amount,
       st.staff AS manager_name,
       st.phone AS manager_phone,
       st.email AS manager_email,
       st.staff_id AS manager_id,
-      (
-        SELECT CONCAT('https://images.unsplash.com/photo-1519211975560-4ca611f5a72a?w=800')
-      ) AS manager_image,
-      (
-        SELECT CONCAT('https://images.unsplash.com/photo-1517673132405-a56a62b18caf?w=800')
-      ) AS main_image,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded
+      ? AS manager_image,
+      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
+      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN NULL WHEN bb.top_bid_at_insert = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
     FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
-    LEFT JOIN states s ON s.id = v.vehicle_state_id
     LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
     LEFT JOIN vehicle_make mk ON mk.id = v.vehicle_make_id
-      LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
-      LEFT JOIN case_options co ON co.id = v.auction_status_id
-      LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
-      ${buyerId ? 'LEFT JOIN buyer_bids bb ON bb.vehicle_id = v.vehicle_id AND bb.buyer_id = ?' : ''}
-      WHERE v.vehicle_id = ?
-      LIMIT 1`,
-    buyerId ? [buyerId, vehicleId] : [vehicleId]
-  );
+    LEFT JOIN vehicle_images vmi ON vmi.vehicle_image_id = v.vehicle_image_id
+    LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
+    LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
+    ${buyerId ? `LEFT JOIN (
+      SELECT bb1.vehicle_id, bb1.buyer_id, bb1.top_bid_at_insert
+      FROM buyer_bids bb1
+      WHERE bb1.buyer_id = ?
+      AND bb1.created_dttm = (
+        SELECT MAX(bb2.created_dttm)
+        FROM buyer_bids bb2
+        WHERE bb2.vehicle_id = bb1.vehicle_id
+        AND bb2.buyer_id = bb1.buyer_id
+      )
+    ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
+    WHERE v.vehicle_id = ?
+    LIMIT 1`;
+
+  const params = buyerId ? [MANAGER_IMG, buyerId, vehicleId] : [MANAGER_IMG, vehicleId];
+  
+  const [rows] = await db.query<RowDataPacket[]>(sql, params);
 
   if (rows.length === 0) {
     return null;
@@ -565,23 +582,23 @@ export async function getVehicleDetails(
     odometer: r.odometer != null ? String(r.odometer) : null,
     fuel: r.fuel ?? null,
     owner_serial: r.ownership_serial ?? null,
-    state_rto: r.state_rto ?? null,
     state_code: typeof r.regs_no === 'string' && r.regs_no.length >= 2 ? r.regs_no.substring(0,2) : null,
-    img_extension: r.img_extension ?? null,
+    has_bidded: (r as any).has_bidded === 1,
     make: r.make ?? null,
     model: r.model ?? null,
     variant: r.variant ?? null,
+    img_extension: r.img_extension ?? null,
     is_favorite: false,
     manufacture_year: r.manufacture_year ?? null,
-    main_image: r.main_image ?? DEFAULT_IMG,
-    status: r.status ?? null,
+    vehicleId: r.vehicle_id,
+    imgIndex: (r as any).img_index ?? 1,
+    bidding_status: r.bidding_status ?? null,
     bid_amount: r.bid_amount != null ? String(r.bid_amount) : null,
     manager_name: r.manager_name ?? null,
     manager_phone: r.manager_phone ?? null,
     manager_email: r.manager_email ?? null,
-    manager_image: r.manager_image ?? DEFAULT_IMG,
+    manager_image: r.manager_image ?? MANAGER_IMG,
     manager_id: r.manager_id != null ? String(r.manager_id) : null,
-    has_bidded: (r as any).has_bidded === 1,
   };
 }
 
@@ -700,20 +717,28 @@ export async function filterVehiclesByGroup(
       md.model_name AS model,
       vv.variant_name AS variant,
       v.manufacturing_year AS manufacture_year,
-      co.case_name AS status,
       COALESCE(v.expected_price, v.base_price) AS bid_amount,
       st.staff AS manager_name,
       st.phone AS manager_phone,
       st.email AS manager_email,
       st.staff_id AS manager_id,
       ? AS manager_image,
-      ? AS main_image,
-      v.vehicle_state_id AS state_rto,
       v.regs_no AS regs_no,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded
+      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
+      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN NULL WHEN bb.top_bid_at_insert = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
     FROM vehicles v
     ${join}
-    ${buyerId ? 'LEFT JOIN buyer_bids bb ON bb.vehicle_id = v.vehicle_id AND bb.buyer_id = ?' : ''}
+    ${buyerId ? `LEFT JOIN (
+      SELECT bb1.vehicle_id, bb1.buyer_id, bb1.top_bid_at_insert
+      FROM buyer_bids bb1
+      WHERE bb1.buyer_id = ?
+      AND bb1.created_dttm = (
+        SELECT MAX(bb2.created_dttm)
+        FROM buyer_bids bb2
+        WHERE bb2.vehicle_id = bb1.vehicle_id
+        AND bb2.buyer_id = bb1.buyer_id
+      )
+    ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
     WHERE ${whereClause}
     ORDER BY v.added_on DESC
     LIMIT ? OFFSET ?
@@ -721,9 +746,9 @@ export async function filterVehiclesByGroup(
 
   let params: any[];
   if (type === "all") {
-    params = buyerId ? [MANAGER_IMG, DEFAULT_IMG, buyerId, ...filterParams, safeLimit, safeOffset] : [MANAGER_IMG, DEFAULT_IMG, ...filterParams, safeLimit, safeOffset];
+    params = buyerId ? [MANAGER_IMG, buyerId, ...filterParams, safeLimit, safeOffset] : [MANAGER_IMG, ...filterParams, safeLimit, safeOffset];
   } else {
-    params = buyerId ? [MANAGER_IMG, DEFAULT_IMG, buyerId, safeTitle, ...filterParams, safeLimit, safeOffset] : [MANAGER_IMG, DEFAULT_IMG, safeTitle, ...filterParams, safeLimit, safeOffset];
+    params = buyerId ? [MANAGER_IMG, buyerId, safeTitle, ...filterParams, safeLimit, safeOffset] : [MANAGER_IMG, safeTitle, ...filterParams, safeLimit, safeOffset];
   }
 
   try {
@@ -734,7 +759,6 @@ export async function filterVehiclesByGroup(
       odometer: r.odometer != null ? String(r.odometer) : null,
       fuel: r.fuel ?? null,
       owner_serial: r.ownership_label ?? null,
-      state_rto: r.state_rto ?? null,
       state_code: typeof r.regs_no === 'string' && r.regs_no.length >= 2 ? r.regs_no.substring(0,2) : null,
       has_bidded: (r as any).has_bidded === 1,
       make: r.make ?? null,
@@ -742,15 +766,14 @@ export async function filterVehiclesByGroup(
       img_extension: r.img_extension ?? null,
       variant: r.variant ?? null,
       manufacture_year: r.manufacture_year ?? null,
-      main_image: r.main_image ?? DEFAULT_IMG,
       vehicleId: r.vehicle_id,
       imgIndex: r.vehicle_image_id ?? 1,
-      status: r.status ?? null,
+      bidding_status: r.bidding_status ?? null,
       bid_amount: r.bid_amount != null ? String(r.bid_amount) : null,
       manager_name: r.manager_name ?? null,
       manager_phone: r.manager_phone ?? null,
       manager_email: r.manager_email ?? null,
-      manager_image: r.manager_image ?? DEFAULT_IMG,
+      manager_image: r.manager_image ?? MANAGER_IMG,
       manager_id: r.manager_id != null ? String(r.manager_id) : null,
       is_favorite: false,
     }));
@@ -797,3 +820,4 @@ export async function getVehicleTypes() {
   );
   return rows;
 }
+

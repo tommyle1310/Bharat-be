@@ -71,6 +71,9 @@ export async function manualBid(req: Request, res: Response) {
     await vehicleDao.updateVehicle(vehicleId, {
       top_bidder_id: buyerId
     });
+    
+    // Update other buyer bids to set top_bid_at_insert to 0
+    await dao.updateOtherBuyerBidsTopBidStatus(vehicleId, buyerId);
   }
 
   res.status(201).json({ message: 'Bid placed' });

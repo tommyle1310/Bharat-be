@@ -14,7 +14,7 @@ export async function get(req: Request, res: Response) {
     return res.status(400).json({ message: 'Invalid vehicle id' });
   }
   const buyerId = req.buyer?.id;
-  const item = await service.get(id, buyerId);
+  const item = await service.getVehicleDetails(id, buyerId);
   if (!item) return res.status(404).json({ message: 'Vehicle not found' });
   res.json(item);
 }

@@ -6,8 +6,8 @@ export async function list(limit?: number, offset?: number) {
   return dao.listVehicles(limit, offset);
 }
 
-export async function get(id: number, buyerId?: number) {
-  return dao.getVehicleById(id);
+export async function getVehicleDetails(id: number, buyerId?: number) {
+  return dao.getVehicleDetails(id, buyerId);
 }
 
 export async function create(payload: Vehicle) {
