@@ -155,15 +155,20 @@ export function startAutoBidRunner() {
             // Notify realtime consumers via Redis key and possible winner change
             try {
               const redis = getRedis();
-              await redis.set("vehicle:bid:update", JSON.stringify({
+              const payload = {
                 vehicleId,
                 buyerId,
                 bidAmt: nextBidAmt,
                 isTopBidder: topBidAtInsert === 1,
-              }));
+              };
+            
+              await redis.publish("vehicle:bid:update", JSON.stringify(payload));
+              console.log("[AUTO-BID-RUNNER] Published vehicle:bid:update", payload);
+            
             } catch (notifyErr) {
-              console.error('[AUTO-BID-RUNNER] Failed to set Redis key vehicle:bid:update', notifyErr);
+              console.error("[AUTO-BID-RUNNER] Failed to publish Redis event vehicle:bid:update", notifyErr);
             }
+            
 
             if (willBeTopBid) {
               try {

@@ -18,8 +18,6 @@ services:
       - "3308:3306"
     volumes:
       - indus_mysql_data:/var/lib/mysql
-    networks:
-      - indus_buyer_net
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -37,42 +35,37 @@ services:
           memory: 128M
     ports:
       - "6381:6379"
-    networks:
-      - indus_buyer_net
 
   app:
     build: .
     image: indus_auction_system_buyer_service-app
     container_name: indus_auction_system_buyer_service_backend
     restart: always
+    network_mode: host
     deploy:
       resources:
         limits:
           cpus: "0.40"
           memory: 256M
-    ports:
-      - "1310:1310"
     env_file:
       - .env.runtime
+    environment:
+      REDIS_HOST: 127.0.0.1   # thay cho 'redis'
+      REDIS_PORT: 6379
     volumes:
       # Mount local data-files directory for local development
       - "${LOCAL_DATA_FILES_PATH:-/tmp/data-files}:/app/data-files:ro"
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_started
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:1310/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    networks:
-      - indus_buyer_net
 
 volumes:
   indus_mysql_data:
-
-networks:
-  indus_buyer_net:
-    external: true
-    name: indus_buyer_net

@@ -140,7 +140,7 @@ export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
     [bid.vehicle_id, bid.buyer_id, bid.bid_amt, bid.is_surrogate, bid.bid_mode, bid.top_bid_at_insert]
   );
   // After successful insert, set Redis key for realtime consumers
-  try {
+  try { 
     const redis = getRedis();
     const payload = {
       vehicleId: bid.vehicle_id,
@@ -148,10 +148,14 @@ export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
       bidAmt: bid.bid_amt,
       isTopBidder: bid.top_bid_at_insert === 1,
     };
-    await redis.set("vehicle:bid:update", JSON.stringify(payload));
+  
+    await redis.publish("vehicle:bid:update", JSON.stringify(payload));
+    console.log("[Redis] Published vehicle:bid:update", payload);
+  
   } catch (e) {
-    console.error("[insertBuyerBid] Failed to set Redis key vehicle:bid:update", e);
+    console.error("[insertBuyerBid] Failed to publish Redis event vehicle:bid:update", e);
   }
+  
 
   // Emit isWinning if this insertion became top (best-effort; losing will be handled by controller/runner where previous top is known)
   try {

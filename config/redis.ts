@@ -4,10 +4,11 @@ import { config } from './config';
 let redisClient: RedisClient | null = null;
 
 export function getRedis(): RedisClient {
+  console.log(`[Redis] Connecting to ${'127.0.0.1'}:${config.redis.port} db=${config.redis.db}`);
   if (redisClient) return redisClient;
 
   const options: RedisOptions = {
-    host: config.redis.host,
+    host: '127.0.0.1',
     port: config.redis.port,
     db: config.redis.db,
     maxRetriesPerRequest: null,
