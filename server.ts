@@ -8,7 +8,7 @@ import { startAutoBidRunner } from "./services/auto-bid.runner";
 const app = createApp();
 const server = http.createServer(app);
 initSocket(server);
-// startAutoBidRunner();
+startAutoBidRunner();
 
 async function initRedisSubscriber() {
   const redis = getRedis().duplicate(); // ioredis client riêng cho subscriber

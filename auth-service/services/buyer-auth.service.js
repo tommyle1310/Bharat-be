@@ -16,7 +16,19 @@ function hashPasswordWithHexSalt(password, hexSalt) {
 }
 
 exports.register = async (req, res) => {
-  const { phone, name, email, business_vertical, address, state_id, city_id, aadhaar_number, pan_number, company_name , pin_number } = req.body || {};
+  // Support multipart fields possibly coming as strings
+  const body = req.body || {};
+  const phone = body.phone || body.mobile;
+  const name = body.name;
+  const email = body.email;
+  const business_vertical = body.business_vertical;
+  const address = body.address;
+  const state_id = body.state_id ? Number(body.state_id) : null;
+  const city_id = body.city_id ? Number(body.city_id) : null;
+  const aadhaar_number = body.aadhaar_number || null;
+  const pan_number = body.pan_number || null;
+  const company_name = body.company_name || null;
+  const pin_number = body.pin_number || null;
 
   if (!phone || !name || !email || !business_vertical) {
     logger.warn('Registration validation failed: missing required fields');
@@ -24,7 +36,18 @@ exports.register = async (req, res) => {
   }
 
   try {
-    // Coerce undefined to null for optional fields to satisfy MySQL driver
+    // Conflict checks
+    const [phoneExists, emailExists] = await Promise.all([
+      authRepo.existsBuyerByPhone(phone),
+      authRepo.existsBuyerByEmail(email)
+    ]);
+    if (phoneExists) {
+      return res.status(409).json({ message: 'Phone already registered' });
+    }
+    if (emailExists) {
+      return res.status(409).json({ message: 'Email already registered' });
+    }
+
     const safeBusinessVertical = business_vertical ?? null; // 'I' | 'B' | 'A'
     const safeAddress = address ?? null;
     const safeStateId = state_id ?? null;
@@ -34,7 +57,8 @@ exports.register = async (req, res) => {
     const safeCompany = company_name ?? null;
     const safePincode = pin_number ?? null;
 
-    await authRepo.createBuyer(
+    // Step 1: create buyer and get id
+    const { insertId: buyerId } = await authRepo.createBuyer(
       name,
       email,
       phone,
@@ -47,10 +71,81 @@ exports.register = async (req, res) => {
       safeCompany,
       safePincode
     );
-    // Verify what got stored
-    // No password handling here; managed by a separate service
-    logger.info(`Buyer registered with phone ${phone}`);
-    res.status(201).json({ message: 'Buyer registered' });
+
+    // Step 2: handle images (optional)
+    const files = req.files || {};
+    logger.info(`register() received file fields: ${Object.keys(files).join(', ')}`);
+    const panFile = files.pan_image && files.pan_image[0];
+    const aadhaarFrontFile = files.aadhaar_front_image && files.aadhaar_front_image[0];
+    const aadhaarBackFile = files.aadhaar_back_image && files.aadhaar_back_image[0];
+
+    const fs = require('fs');
+    const path = require('path');
+
+    const baseDir = process.env.DIR_BASE || process.env.DATA_FILES_PATH;
+    const buyerDirName = process.env.DIR_BUYER || 'buyer';
+    if (!baseDir) {
+      logger.warn('DIR_BASE/DATA_FILES_PATH not set; skipping file save');
+    }
+
+    const ensureDir = (dirPath) => {
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+      }
+    };
+
+    const getExt = (originalName, mimeType) => {
+      const guessed = (originalName && path.extname(originalName).replace('.', '').toLowerCase()) || null;
+      if (guessed) return guessed;
+      if (!mimeType) return 'jpg';
+      const map = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+      return map[mimeType] || 'jpg';
+    };
+
+    let panDocId = null;
+    let aadhaarFrontDocId = null;
+    let aadhaarBackDocId = null;
+
+    // Helper to insert doc row, compute path, and write file
+    const handleDoc = async (file, folder) => {
+      try {
+        if (!file) return null;
+        if (!baseDir) {
+          logger.warn(`Base data dir not set; skipping save for ${folder}`);
+          return null;
+        }
+        const ext = getExt(file.originalname, file.mimetype);
+        const { docImageId } = await authRepo.insertBuyerDocImage(ext);
+        const dir = path.join(baseDir, buyerDirName, String(buyerId), folder);
+        ensureDir(dir);
+        const filePath = path.join(dir, `${docImageId}.${ext}`);
+        if (!file.buffer || !Buffer.isBuffer(file.buffer)) {
+          logger.warn(`File buffer missing for ${folder}; skipping save`);
+          return null;
+        }
+        await fs.promises.writeFile(filePath, file.buffer);
+        return docImageId;
+      } catch (e) {
+        logger.error(`Failed handling ${folder} doc for buyer ${buyerId}: ${e.message}`);
+        return null;
+      }
+    };
+
+    panDocId = await handleDoc(panFile, 'PAN');
+    // AADHAAR folder for both front and back
+    aadhaarFrontDocId = await handleDoc(aadhaarFrontFile, 'AADHAAR');
+    aadhaarBackDocId = await handleDoc(aadhaarBackFile, 'AADHAAR');
+
+    if (panDocId || aadhaarFrontDocId || aadhaarBackDocId) {
+      await authRepo.updateBuyerDocIds(buyerId, {
+        panDocId,
+        aadhaarFrontDocId,
+        aadhaarBackDocId
+      });
+    }
+
+    logger.info(`Buyer registered with phone ${phone} and id ${buyerId}`);
+    res.status(201).json({ message: 'Buyer registered', id: buyerId, pan_doc_id: panDocId, aadhaar_front_doc_id: aadhaarFrontDocId, aadhaar_back_doc_id: aadhaarBackDocId });
   } catch (err) {
     logger.error(`Registration failed for phone ${phone}: ${err.message}`);
     res.status(500).json({ message: 'Registration failed' });
