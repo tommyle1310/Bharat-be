@@ -60,7 +60,7 @@ export interface VehicleGroupItem {
   total_vehicles: string;
 }
 
-export async function getGroups(): Promise<VehicleGroupItem[]> {
+export async function getGroups(businessVertical: 'A'|'B'|'I' = 'A'): Promise<VehicleGroupItem[]> {
   const db: Pool = getDb();
 
   const DEFAULT_IMG = DEFAULT_IMAGES.VEHICLE; // Fallback to external URL
@@ -68,9 +68,16 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
   const REGIONS = ["North", "South", "East", "West"];
   const now = new Date();
 
-  // Count per region, all vehicles
+  // Count expression per business vertical (do NOT filter rows; only change how we count)
+  const totalExpr = businessVertical === 'I'
+    ? 'SUM(CASE WHEN v.vehicle_category_id = 10 THEN 1 ELSE 0 END)'
+    : businessVertical === 'B'
+      ? 'SUM(CASE WHEN v.vehicle_category_id = 20 THEN 1 ELSE 0 END)'
+      : 'COUNT(v.vehicle_id)';
+
+  // Count per region; groups remain unchanged, counts vary by businessVertical
   const [regionRows] = await db.query<RowDataPacket[]>(
-    `SELECT s.region AS region, COUNT(v.vehicle_id) AS total
+    `SELECT s.region AS region, ${totalExpr} AS total
      FROM states s
      LEFT JOIN vehicles v 
        ON v.vehicle_state_id = s.id
@@ -90,9 +97,9 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
     total_vehicles: String(regionMap[region] ?? 0),
   }));
 
-  // Auction status via case_options, all vehicles
+  // Auction status via case_options; do NOT filter out statuses
   const [statusRows] = await db.query<RowDataPacket[]>(
-    `SELECT co.id AS id, co.case_name AS name, COUNT(v.vehicle_id) AS total
+    `SELECT co.id AS id, co.case_name AS name, ${totalExpr} AS total
      FROM case_options co
      LEFT JOIN vehicles v 
        ON v.auction_status_id = co.id
@@ -107,9 +114,11 @@ export async function getGroups(): Promise<VehicleGroupItem[]> {
     total_vehicles: String(r.total),
   }));
 
-  // Tổng số xe
+  // Total vehicles; counts vary by businessVertical
   const [allRows] = await db.query<RowDataPacket[]>(
-    `SELECT COUNT(*) AS total_all FROM vehicles`
+    `SELECT ${businessVertical === 'I' ? 'SUM(CASE WHEN v.vehicle_category_id = 10 THEN 1 ELSE 0 END)'
+      : businessVertical === 'B' ? 'SUM(CASE WHEN v.vehicle_category_id = 20 THEN 1 ELSE 0 END)'
+      : 'COUNT(v.vehicle_id)'} AS total_all FROM vehicles v`
   );
 
   const total_all = allRows?.[0]?.total_all ?? 0;
@@ -135,6 +144,9 @@ export interface VehicleItem {
   vehicle_model: string | null;
   vehicle_variant: string | null;
   fuel_type: string | null;
+  transmissionType: string | null;
+  rc_availability: boolean | null;
+  repo_date: string | null;
   staff_name: string | null;
   staff_phone: string | null;
   has_bidded?: boolean;
@@ -151,6 +163,10 @@ export interface VehicleListItem {
   make: string | null;
   model: string | null;
   variant: string | null;
+  transmissionType: string | null;
+  rc_availability: boolean | null;
+  repo_date: string | null;
+  regs_no?: string | null;
   is_favorite: boolean;
   manufacture_year: string | null;
   vehicleId: number;
@@ -188,6 +204,9 @@ export async function searchVehicles(
       vmo.model_name AS vehicle_model,
       vv.variant_name AS vehicle_variant,
       ft.fuel_type AS fuel_type,
+      tt.transmission_name AS transmissionType,
+      v.rc_availability,
+      v.repo_date,
       s.staff AS staff_name,
       s.phone AS staff_phone,
       ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded
@@ -196,6 +215,7 @@ export async function searchVehicles(
     LEFT JOIN vehicle_model vmo ON v.vehicle_model_id = vmo.vehicle_model_id
     LEFT JOIN vehicle_variant vv ON v.vehicle_variant_id = vv.vehicle_variant_id
     LEFT JOIN fuel_types ft ON v.fuel_type_id = ft.id
+    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
     LEFT JOIN staff s ON v.vehicle_manager_id = s.staff_id
     ${buyerId ? 'LEFT JOIN buyer_bids bb ON bb.vehicle_id = v.vehicle_id AND bb.buyer_id = ?' : ''}
     WHERE 
@@ -236,6 +256,8 @@ export async function searchVehicles(
   return rows.map((r) => ({
     ...r,
     has_bidded: (r as any).has_bidded === 1,
+    rc_availability: r.rc_availability == null ? null : Boolean(r.rc_availability),
+    repo_date: r.repo_date ? new Date(r.repo_date).toISOString() : null,
   })) as VehicleItem[];
 }
 
@@ -244,7 +266,8 @@ export async function getVehiclesByGroup(
   title: string,
   limit = 50,
   offset = 0,
-  buyerId?: number
+  buyerId?: number,
+  businessVertical: 'A' | 'B' | 'I' = 'A'
 ): Promise<VehicleListItem[]> {
   const db: Pool = getDb();
 
@@ -259,25 +282,31 @@ export async function getVehiclesByGroup(
 
   let where = "";
   let join = "";
+  let categoryFilter = "";
+  if (businessVertical === 'I') {
+    categoryFilter = " AND v.vehicle_category_id = 10";
+  } else if (businessVertical === 'B') {
+    categoryFilter = " AND v.vehicle_category_id = 20";
+  }
 
   if (type === "auction_status") {
     join = `
       LEFT JOIN case_options co ON co.id = v.auction_status_id
       LEFT JOIN states s ON s.id = v.vehicle_state_id
     `;
-    where = "LOWER(TRIM(co.case_name)) = LOWER(?)";
+    where = "LOWER(TRIM(co.case_name)) = LOWER(?)" + categoryFilter;
   } else if (type === "state") {
     join = `
       LEFT JOIN states s ON s.id = v.vehicle_state_id
       LEFT JOIN case_options co ON co.id = v.auction_status_id
     `;
-    where = "LOWER(TRIM(s.region)) = LOWER(?)";
+    where = "LOWER(TRIM(s.region)) = LOWER(?)" + categoryFilter;
   } else if (type === "all") {
     join = `
       LEFT JOIN states s ON s.id = v.vehicle_state_id
       LEFT JOIN case_options co ON co.id = v.auction_status_id
     `;
-    where = "1=1";
+    where = "1=1" + categoryFilter;
   }
 
   const sql = `
@@ -288,6 +317,9 @@ export async function getVehiclesByGroup(
       v.regs_no AS regs_no,
       COALESCE(v.vehicle_image_id, 1) AS img_index,
       ft.fuel_type AS fuel,
+      tt.transmission_name AS transmissionType,
+      v.rc_availability,
+      v.repo_date,
       v.ownership_serial,
       mk.make_name AS make,
       vmi.img_extension AS img_extension,
@@ -305,6 +337,7 @@ export async function getVehiclesByGroup(
       ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
     FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
+    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
     LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
     LEFT JOIN vehicle_make mk ON mk.id = v.vehicle_make_id
     LEFT JOIN vehicle_images vmi ON vmi.vehicle_image_id = v.vehicle_image_id
@@ -359,6 +392,10 @@ export async function getVehiclesByGroup(
     model: r.model ?? null,
     variant: r.variant ?? null,
     img_extension: r.img_extension ?? null,
+    transmissionType: r.transmissionType ?? null,
+    rc_availability: r.rc_availability == null ? null : Boolean(r.rc_availability),
+    repo_date: r.repo_date ? new Date(r.repo_date).toISOString() : null,
+    regs_no: r.regs_no ?? null,
     is_favorite: false,
     manufacture_year: r.manufacture_year ?? null,
     vehicleId: r.vehicle_id,
@@ -385,7 +422,8 @@ export async function searchVehiclesByGroup(
   title: string,
   limit = 50,
   offset = 0,
-  buyerId?: number
+  buyerId?: number,
+  businessVertical: 'A' | 'B' | 'I' = 'A'
 ): Promise<VehicleListItem[]> {
   const db: Pool = getDb();
 
@@ -406,20 +444,28 @@ export async function searchVehiclesByGroup(
     LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
     LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
+    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
     LEFT JOIN vehicle_images vmi ON vmi.vehicle_image_id = v.vehicle_image_id
     LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
     LEFT JOIN states s ON s.id = v.vehicle_state_id
     LEFT JOIN case_options co ON co.id = v.auction_status_id
   `;
 
+  let categoryFilter = "";
+  if (businessVertical === 'I') {
+    categoryFilter = " AND v.vehicle_category_id = 10";
+  } else if (businessVertical === 'B') {
+    categoryFilter = " AND v.vehicle_category_id = 20";
+  }
+
   if (type === "auction_status") {
-    where = `LOWER(TRIM(co.case_name)) = LOWER(?)`;
+    where = `LOWER(TRIM(co.case_name)) = LOWER(?)` + categoryFilter;
   } else if (type === "state") {
-    where = `LOWER(TRIM(s.region)) = LOWER(?)`;
+    where = `LOWER(TRIM(s.region)) = LOWER(?)` + categoryFilter;
   } else if (type === "all") {
-    where = "1=1";
+    where = "1=1" + categoryFilter;
   } else {
-    where = "1=1"; // Default case
+    where = "1=1" + categoryFilter; // Default case
   }
 
   // Combine keyword search with type/title filter (only if keyword is provided)
@@ -444,6 +490,9 @@ export async function searchVehiclesByGroup(
       v.regs_no AS regs_no,
       COALESCE(v.vehicle_image_id, 1) AS img_index,
       ft.fuel_type AS fuel,
+      tt.transmission_name AS transmissionType,
+      v.rc_availability,
+      v.repo_date,
       v.ownership_serial,
       mk.make_name AS make,
       vmi.img_extension AS img_extension,
@@ -529,6 +578,10 @@ export async function searchVehiclesByGroup(
       model: r.model ?? null,
       img_extension: r.img_extension ?? null,
       variant: r.variant ?? null,
+      transmissionType: r.transmissionType ?? null,
+      rc_availability: r.rc_availability == null ? null : Boolean(r.rc_availability),
+      repo_date: r.repo_date ? new Date(r.repo_date).toISOString() : null,
+      regs_no: r.regs_no ?? null,
       manufacture_year: r.manufacture_year ?? null,
       vehicleId: r.vehicle_id,
       imgIndex: Number((r as any).img_index) || 1,
@@ -567,6 +620,9 @@ export async function getVehicleDetails(
       v.regs_no AS regs_no,
       COALESCE(v.vehicle_image_id, 1) AS img_index,
       ft.fuel_type AS fuel,
+      tt.transmission_name AS transmissionType,
+      v.rc_availability,
+      v.repo_date,
       v.ownership_serial,
       mk.make_name AS make,
       vmi.img_extension AS img_extension,
@@ -583,6 +639,7 @@ export async function getVehicleDetails(
       ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
     FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
+    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
     LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
     LEFT JOIN vehicle_make mk ON mk.id = v.vehicle_make_id
     LEFT JOIN vehicle_images vmi ON vmi.vehicle_image_id = v.vehicle_image_id
@@ -624,6 +681,10 @@ export async function getVehicleDetails(
     model: r.model ?? null,
     variant: r.variant ?? null,
     img_extension: r.img_extension ?? null,
+    transmissionType: r.transmissionType ?? null,
+    rc_availability: r.rc_availability == null ? null : Boolean(r.rc_availability),
+    repo_date: r.repo_date ? new Date(r.repo_date).toISOString() : null,
+    regs_no: r.regs_no ?? null,
     is_favorite: false,
     manufacture_year: r.manufacture_year ?? null,
     vehicleId: r.vehicle_id,
@@ -647,7 +708,8 @@ export async function filterVehiclesByGroup(
   rcAvailable: string,
   limit = 50,
   offset = 0,
-  buyerId?: number
+  buyerId?: number,
+  businessVertical: 'A' | 'B' | 'I' = 'A'
 ): Promise<VehicleListItem[]> {
   const db: Pool = getDb();
 
@@ -672,12 +734,19 @@ export async function filterVehiclesByGroup(
     LEFT JOIN ownership_serial os ON os.ownership_id = CAST(v.ownership_serial AS UNSIGNED)
   `;
 
+  let categoryFilter = "";
+  if (businessVertical === 'I') {
+    categoryFilter = " AND v.vehicle_category_id = 10";
+  } else if (businessVertical === 'B') {
+    categoryFilter = " AND v.vehicle_category_id = 20";
+  }
+
   if (type === "auction_status") {
-    where = `LOWER(TRIM(co.case_name)) = LOWER(?) AND v.auction_end_dttm > NOW()`;
+    where = `LOWER(TRIM(co.case_name)) = LOWER(?) AND v.auction_end_dttm > NOW()` + categoryFilter;
   } else if (type === "state") {
-    where = `LOWER(TRIM(s.region)) = LOWER(?) AND v.auction_end_dttm > NOW()`;
+    where = `LOWER(TRIM(s.region)) = LOWER(?) AND v.auction_end_dttm > NOW()` + categoryFilter;
   } else if (type === "all") {
-    where = "v.auction_end_dttm > NOW()";
+    where = "v.auction_end_dttm > NOW()" + categoryFilter;
   }
 
   const filterConditions: string[] = [];
@@ -747,6 +816,9 @@ export async function filterVehiclesByGroup(
       v.odometer_reading AS odometer,
       ft.fuel_type AS fuel,
       v.vehicle_image_id,
+      tt.transmission_name AS transmissionType,
+      v.rc_availability,
+      v.repo_date,
       os.ownership AS ownership_label,
       mk.make_name AS make,
       vmi.img_extension AS img_extension,
@@ -765,6 +837,7 @@ export async function filterVehiclesByGroup(
       ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
     FROM vehicles v
     ${join}
+    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
     ${buyerId ? `LEFT JOIN (
       SELECT bb1.vehicle_id, bb1.buyer_id, bb1.top_bid_at_insert
       FROM buyer_bids bb1
@@ -819,6 +892,10 @@ export async function filterVehiclesByGroup(
       model: r.model ?? null,
       img_extension: r.img_extension ?? null,
       variant: r.variant ?? null,
+      transmissionType: r.transmissionType ?? null,
+      rc_availability: r.rc_availability == null ? null : Boolean(r.rc_availability),
+      repo_date: r.repo_date ? new Date(r.repo_date).toISOString() : null,
+      regs_no: r.regs_no ?? null,
       manufacture_year: r.manufacture_year ?? null,
       vehicleId: r.vehicle_id,
       imgIndex: r.vehicle_image_id ?? 1,

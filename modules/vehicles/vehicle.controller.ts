@@ -38,8 +38,9 @@ export async function remove(req: Request, res: Response) {
   res.status(204).send();
 }
 
-export async function groups(_req: Request, res: Response) {
-  const data = await service.groups();
+export async function groups(req: Request, res: Response) {
+  const businessVertical = String(req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
+  const data = await service.groups(businessVertical);
   res.json(data);
 }
 
@@ -54,6 +55,7 @@ export async function listByGroup(req: Request, res: Response) {
   const title = String(req.query.title);
   const limit = Number(req.query.limit ?? 50);
   const offset = Number(req.query.offset ?? 0);
+  const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
   console.log('check', type, title, limit, offset);
   
   if (!type || !(title)) {
@@ -66,7 +68,7 @@ export async function listByGroup(req: Request, res: Response) {
   }
 
   const buyerId = req.buyer?.id;
-  const data = await service.listByGroup(type as 'state' | 'auction_status' | 'all', title, limit, offset, buyerId);
+  const data = await service.listByGroup(type as 'state' | 'auction_status' | 'all', title, limit, offset, buyerId, businessVertical);
   res.json(data);
 }
 
@@ -85,7 +87,8 @@ export async function searchByGroup(req: Request, res: Response) {
   const limit = Number(req.query.limit ?? 50);
   const offset = Number(req.query.offset ?? 0);
   const buyerId = req.buyer?.id;
-  const data = await service.searchVehiclesByGroup(keyword, type as 'state' | 'auction_status' | 'all', title, limit, offset, buyerId);
+  const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
+  const data = await service.searchVehiclesByGroup(keyword, type as 'state' | 'auction_status' | 'all', title, limit, offset, buyerId, businessVertical);
   res.json(data);
 }
 
@@ -98,6 +101,7 @@ export async function filterByGroup(req: Request, res: Response) {
   const rcAvailable = String(req.query.rc_available || '');
   const limit = Number(req.query.limit ?? 50);
   const offset = Number(req.query.offset ?? 0);
+  const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
   
   if (!type || !title) {
     return res.status(400).json({ message: 'type and title query params are required' });
@@ -118,7 +122,8 @@ export async function filterByGroup(req: Request, res: Response) {
     rcAvailable, 
     limit, 
     offset,
-    buyerId
+    buyerId,
+    businessVertical
   );
   res.json(data);
 }

@@ -139,6 +139,19 @@ export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
      VALUES (?, ?, ?, ?, ?, ?, NOW(), 0)`,
     [bid.vehicle_id, bid.buyer_id, bid.bid_amt, bid.is_surrogate, bid.bid_mode, bid.top_bid_at_insert]
   );
+  // Ensure vehicle is on buyer's watchlist
+  try {
+    await db.query<ResultSetHeader>(
+      `INSERT INTO watchlist (user_id, vehicle_id)
+       SELECT ?, ? FROM DUAL
+       WHERE NOT EXISTS (
+         SELECT 1 FROM watchlist WHERE user_id = ? AND vehicle_id = ?
+       )`,
+      [bid.buyer_id, bid.vehicle_id, bid.buyer_id, bid.vehicle_id]
+    );
+  } catch (e) {
+    console.error('[insertBuyerBid] Failed to upsert watchlist', e);
+  }
   // After successful insert, set Redis key for realtime consumers
   try { 
     const redis = getRedis();

@@ -10,6 +10,10 @@ router.get('/groups', ctrl.groups);
 router.get('/search', requireBuyerAuth, ctrl.search);
 router.get('/search-by-group', requireBuyerAuth, ctrl.searchByGroup);
 router.get('/filter-by-group', requireBuyerAuth, ctrl.filterByGroup);
+// businessVertical-aware routes (A|B|I) as path param; keep backward compatible above
+router.get('/:businessVertical/groups/list', requireBuyerAuth, ctrl.listByGroup);
+router.get('/:businessVertical/search-by-group', requireBuyerAuth, ctrl.searchByGroup);
+router.get('/:businessVertical/filter-by-group', requireBuyerAuth, ctrl.filterByGroup);
 router.get('/lookup/ownership', ctrl.getOwnershipTypes);
 router.get('/lookup/fuel', ctrl.getFuelTypes);
 router.get('/lookup/vehicle-types', ctrl.getVehicleTypes);

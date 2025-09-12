@@ -25,19 +25,19 @@ export async function remove(id: number) {
   return dao.deleteVehicle(id);
 }
 
-export async function groups(): Promise<VehicleGroupItem[]> {
-  return dao.getGroups();
+export async function groups(businessVertical: 'A'|'B'|'I' = 'A'): Promise<VehicleGroupItem[]> {
+  return dao.getGroups(businessVertical);
 }
 
-export async function listByGroup(type: 'state' | 'auction_status' | 'all', title: string, limit?: number, offset?: number, buyerId?: number): Promise<VehicleListItem[]> {
-  return dao.getVehiclesByGroup(type, title, limit, offset, buyerId);
+export async function listByGroup(type: 'state' | 'auction_status' | 'all', title: string, limit?: number, offset?: number, buyerId?: number, businessVertical: 'A' | 'B' | 'I' = 'A'): Promise<VehicleListItem[]> {
+  return dao.getVehiclesByGroup(type, title, limit, offset, buyerId, businessVertical);
 }
 
 export async function searchVehicles(keyword: string, limit?: number, offset?: number, buyerId?: number): Promise<dao.VehicleItem[]> {
   return dao.searchVehicles(keyword, limit, offset, buyerId);
 }
-export async function searchVehiclesByGroup(keyword: string, type: 'state' | 'auction_status' | 'all', title: string, limit?: number, offset?: number, buyerId?: number): Promise<dao.VehicleListItem[]> {
-  return dao.searchVehiclesByGroup(keyword, type, title, limit, offset, buyerId);
+export async function searchVehiclesByGroup(keyword: string, type: 'state' | 'auction_status' | 'all', title: string, limit?: number, offset?: number, buyerId?: number, businessVertical: 'A' | 'B' | 'I' = 'A'): Promise<dao.VehicleListItem[]> {
+  return dao.searchVehiclesByGroup(keyword, type, title, limit, offset, buyerId, businessVertical);
 }
 
 export async function filterVehiclesByGroup(
@@ -49,9 +49,10 @@ export async function filterVehiclesByGroup(
   rcAvailable: string,
   limit?: number,
   offset?: number,
-  buyerId?: number
+  buyerId?: number,
+  businessVertical: 'A' | 'B' | 'I' = 'A'
 ): Promise<dao.VehicleListItem[]> {
-  return dao.filterVehiclesByGroup(type, title, vehicleType, vehicleFuel, ownership, rcAvailable, limit, offset, buyerId);
+  return dao.filterVehiclesByGroup(type, title, vehicleType, vehicleFuel, ownership, rcAvailable, limit, offset, buyerId, businessVertical);
 }
 
 export async function getOwnershipTypes() {

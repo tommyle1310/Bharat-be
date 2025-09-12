@@ -71,7 +71,7 @@ exports.updateBuyerDocIds = async (
       `UPDATE buyers 
        SET pan_doc_id = COALESCE(?, pan_doc_id), 
            aadhar_front_doc_id = COALESCE(?, aadhar_front_doc_id), 
-           aadhar_back_doc_id = COALESCE(?, aadhar_back_doc_id) 
+           aadhar_back_doc_id = COALESCE(?, aadhar_back_doc_id)
        WHERE id = ?`,
       [panDocId, aadhaarFrontDocId, aadhaarBackDocId, buyerId]
     );

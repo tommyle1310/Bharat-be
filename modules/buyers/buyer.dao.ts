@@ -17,7 +17,7 @@ export async function getById(id: number): Promise<Buyer | null> {
 }
 export async function getNameByMobile(mobile: string): Promise<Buyer | null> {
   const db: Pool = getDb();
-  const [rows] = await db.query<RowDataPacket[]>(`SELECT name, id FROM ${TABLE} WHERE mobile = ? LIMIT 1`, [mobile]);
+  const [rows] = await db.query<RowDataPacket[]>(`SELECT name, id, email, mobile, business_vertical, address, aadhaar_number, pan_number, company_name, pincode FROM ${TABLE} WHERE mobile = ? LIMIT 1`, [mobile]);
   return (rows[0] as unknown as Buyer) || null;
 }
 

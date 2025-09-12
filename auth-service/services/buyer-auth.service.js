@@ -75,9 +75,13 @@ exports.register = async (req, res) => {
     // Step 2: handle images (optional)
     const files = req.files || {};
     logger.info(`register() received file fields: ${Object.keys(files).join(', ')}`);
+    logger.info(`register() files object: ${JSON.stringify(Object.keys(files).reduce((acc, key) => ({ ...acc, [key]: files[key]?.length || 0 }), {}))}`);
+    
     const panFile = files.pan_image && files.pan_image[0];
     const aadhaarFrontFile = files.aadhaar_front_image && files.aadhaar_front_image[0];
     const aadhaarBackFile = files.aadhaar_back_image && files.aadhaar_back_image[0];
+    
+    logger.info(`register() file processing: pan=${!!panFile}, aadhaarFront=${!!aadhaarFrontFile}, aadhaarBack=${!!aadhaarBackFile}`);
 
     const fs = require('fs');
     const path = require('path');
@@ -131,17 +135,23 @@ exports.register = async (req, res) => {
       }
     };
 
-    panDocId = await handleDoc(panFile, 'PAN');
-    // AADHAAR folder for both front and back
-    aadhaarFrontDocId = await handleDoc(aadhaarFrontFile, 'AADHAAR');
-    aadhaarBackDocId = await handleDoc(aadhaarBackFile, 'AADHAAR');
+    try {
+      panDocId = await handleDoc(panFile, 'PAN');
+      // AADHAAR folder for both front and back
+      aadhaarFrontDocId = await handleDoc(aadhaarFrontFile, 'AADHAAR');
+      aadhaarBackDocId = await handleDoc(aadhaarBackFile, 'AADHAAR');
 
-    if (panDocId || aadhaarFrontDocId || aadhaarBackDocId) {
-      await authRepo.updateBuyerDocIds(buyerId, {
-        panDocId,
-        aadhaarFrontDocId,
-        aadhaarBackDocId
-      });
+      if (panDocId || aadhaarFrontDocId || aadhaarBackDocId) {
+        await authRepo.updateBuyerDocIds(buyerId, {
+          panDocId,
+          aadhaarFrontDocId,
+          aadhaarBackDocId
+        });
+        logger.info(`Updated buyer ${buyerId} with doc IDs: pan=${panDocId}, aadhaarFront=${aadhaarFrontDocId}, aadhaarBack=${aadhaarBackDocId}`);
+      }
+    } catch (docError) {
+      logger.error(`Document processing failed for buyer ${buyerId}: ${docError.message}`);
+      // Continue with registration even if document processing fails
     }
 
     logger.info(`Buyer registered with phone ${phone} and id ${buyerId}`);
@@ -201,7 +211,7 @@ exports.login = async (req, res) => {
     const token = generateToken({ id: user.id, userType: 'buyer', phoneNo: user.mobile });
     const refreshToken = generateRefreshToken({ id: user.id, userType: 'buyer', phoneNo: user.mobile });
     logger.info(`Login successful for phone: ${phone}`);
-    res.json({ token, refreshToken, category: user.category_id });
+    res.json({ token, refreshToken });
   } catch (err) {
     logger.error(`Login error for phone ${phone}: ${err.message}`);
     res.status(500).json({ message: 'Login failed' });
