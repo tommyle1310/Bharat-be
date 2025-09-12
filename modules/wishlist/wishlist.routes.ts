@@ -6,6 +6,7 @@ const router = Router();
 
 router.get('/', requireBuyerAuth, ctrl.list);
 router.get('/:businessVertical', requireBuyerAuth, ctrl.list);
+router.post('/update-wishlist', requireBuyerAuth, ctrl.updatePreferences);
 
 export default router;
 

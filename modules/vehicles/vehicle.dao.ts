@@ -718,6 +718,7 @@ export async function filterVehiclesByGroup(
   vehicleFuel: string,
   ownership: string,
   rcAvailable: string,
+  state: string,
   limit = 50,
   offset = 0,
   buyerId?: number,
@@ -812,6 +813,20 @@ export async function filterVehiclesByGroup(
       filterConditions.push("v.rc_availability = 1");
     } else if (rcAvailable.toLowerCase() === "false") {
       filterConditions.push("v.rc_availability = 0");
+    }
+  }
+
+  // State/Region filter
+  if (state && state.trim()) {
+    const stateValue = state.trim();
+    // Check if it's a region (North, West, South, East) or specific state
+    if (['north', 'west', 'south', 'east'].includes(stateValue.toLowerCase())) {
+      filterConditions.push("LOWER(TRIM(s.region)) = LOWER(TRIM(?))");
+      filterParams.push(stateValue);
+    } else {
+      // Assume it's a specific state name
+      filterConditions.push("LOWER(TRIM(s.state)) = LOWER(TRIM(?))");
+      filterParams.push(stateValue);
     }
   }
 

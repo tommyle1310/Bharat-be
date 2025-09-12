@@ -47,12 +47,13 @@ export async function filterVehiclesByGroup(
   vehicleFuel: string,
   ownership: string,
   rcAvailable: string,
+  state: string,
   limit?: number,
   offset?: number,
   buyerId?: number,
   businessVertical: 'A' | 'B' | 'I' = 'A'
 ): Promise<dao.VehicleListItem[]> {
-  return dao.filterVehiclesByGroup(type, title, vehicleType, vehicleFuel, ownership, rcAvailable, limit, offset, buyerId, businessVertical);
+  return dao.filterVehiclesByGroup(type, title, vehicleType, vehicleFuel, ownership, rcAvailable, state, limit, offset, buyerId, businessVertical);
 }
 
 export async function getOwnershipTypes() {

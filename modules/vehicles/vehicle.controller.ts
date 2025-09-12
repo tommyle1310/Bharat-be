@@ -99,6 +99,7 @@ export async function filterByGroup(req: Request, res: Response) {
   const vehicleFuel = String(req.query.fuel || req.query.vehicle_fuel || '');
   const ownership = String(req.query.ownership || '');
   const rcAvailable = String(req.query.rc_available || '');
+  const state = String(req.query.state || '');
   const limit = Number(req.query.limit ?? 50);
   const offset = Number(req.query.offset ?? 0);
   const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
@@ -119,7 +120,8 @@ export async function filterByGroup(req: Request, res: Response) {
     vehicleType, 
     vehicleFuel, 
     ownership, 
-    rcAvailable, 
+    rcAvailable,
+    state,
     limit, 
     offset,
     buyerId,
