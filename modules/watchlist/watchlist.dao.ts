@@ -4,9 +4,10 @@ import { DEFAULT_IMAGES } from "../../utils/static-files";
 
 export async function addToWatchlist(userId: number, vehicleId: number): Promise<void> {
   const db: Pool = getDb();
+  // Generate explicit id since table may not be AUTO_INCREMENT
   await db.query<ResultSetHeader>(
-    `INSERT INTO watchlist (user_id, vehicle_id)
-     SELECT ?, ? FROM DUAL
+    `INSERT INTO watchlist (id, user_id, vehicle_id)
+     SELECT (SELECT COALESCE(MAX(w2.id), 0) + 1 FROM watchlist w2), ?, ?
      WHERE NOT EXISTS (
        SELECT 1 FROM watchlist WHERE user_id = ? AND vehicle_id = ?
      )`,
@@ -44,7 +45,8 @@ export async function toggleWatchlist(userId: number, vehicleId: number): Promis
     return { is_favorite: false, locked: false };
   } else {
     await db.query<ResultSetHeader>(
-      `INSERT INTO watchlist (user_id, vehicle_id) VALUES (?, ?)`,
+      `INSERT INTO watchlist (id, user_id, vehicle_id)
+       VALUES ((SELECT COALESCE(MAX(w2.id), 0) + 1 FROM watchlist w2), ?, ?)`,
       [userId, vehicleId]
     );
     return { is_favorite: true, locked: false };

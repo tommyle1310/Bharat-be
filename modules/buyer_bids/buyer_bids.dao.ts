@@ -142,8 +142,8 @@ export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
   // Ensure vehicle is on buyer's watchlist
   try {
     await db.query<ResultSetHeader>(
-      `INSERT INTO watchlist (user_id, vehicle_id)
-       SELECT ?, ? FROM DUAL
+      `INSERT INTO watchlist (id, user_id, vehicle_id)
+       SELECT (SELECT COALESCE(MAX(w2.id), 0) + 1 FROM watchlist w2), ?, ?
        WHERE NOT EXISTS (
          SELECT 1 FROM watchlist WHERE user_id = ? AND vehicle_id = ?
        )`,

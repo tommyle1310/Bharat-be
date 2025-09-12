@@ -142,6 +142,7 @@ export interface VehicleItem {
   vehicle_location: string | null;
   vehicle_make: string | null;
   vehicle_model: string | null;
+  is_favorite: boolean;
   vehicle_variant: string | null;
   fuel_type: string | null;
   transmissionType: string | null;
@@ -209,7 +210,8 @@ export async function searchVehicles(
       v.repo_date,
       s.staff AS staff_name,
       s.phone AS staff_phone,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded
+      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
+      ${buyerId ? 'CASE WHEN w.user_id IS NULL THEN 0 ELSE 1 END' : '0'} AS is_favorite
     FROM vehicles v
     LEFT JOIN vehicle_make vm ON v.vehicle_make_id = vm.id
     LEFT JOIN vehicle_model vmo ON v.vehicle_model_id = vmo.vehicle_model_id
@@ -218,6 +220,7 @@ export async function searchVehicles(
     LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
     LEFT JOIN staff s ON v.vehicle_manager_id = s.staff_id
     ${buyerId ? 'LEFT JOIN buyer_bids bb ON bb.vehicle_id = v.vehicle_id AND bb.buyer_id = ?' : ''}
+    ${buyerId ? 'LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?' : ''}
     WHERE 
       v.manufacturing_year LIKE ?
       OR vm.make_name LIKE ?
@@ -230,6 +233,7 @@ export async function searchVehicles(
     LIMIT ? OFFSET ?
     `,
     buyerId ? [
+      buyerId,
       buyerId,
       likeKeyword,
       likeKeyword,
@@ -258,6 +262,7 @@ export async function searchVehicles(
     has_bidded: (r as any).has_bidded === 1,
     rc_availability: r.rc_availability == null ? null : Boolean(r.rc_availability),
     repo_date: r.repo_date ? new Date(r.repo_date).toISOString() : null,
+    is_favorite: (r as any).is_favorite === 1,
   })) as VehicleItem[];
 }
 
@@ -334,7 +339,8 @@ export async function getVehiclesByGroup(
       ? AS manager_image,
       v.added_on,
       ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
-      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status,
+      ${buyerId ? 'CASE WHEN MAX(w.user_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS is_favorite
     FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
     LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
@@ -355,6 +361,7 @@ export async function getVehiclesByGroup(
         AND bb2.buyer_id = bb1.buyer_id
       )
     ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
+    ${buyerId ? 'LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?' : ''}
     WHERE ${where}
     GROUP BY v.vehicle_id
     ORDER BY v.added_on DESC
@@ -364,9 +371,10 @@ export async function getVehiclesByGroup(
   let params: any[];
 
   if (type === "all") {
-    params = buyerId ? [MANAGER_IMG, buyerId, safeLimit, safeOffset] : [MANAGER_IMG, safeLimit, safeOffset];
+    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, safeLimit, safeOffset] : [MANAGER_IMG, safeLimit, safeOffset];
   } else {
-    params = buyerId ? [MANAGER_IMG, buyerId, safeTitle, safeLimit, safeOffset] : [MANAGER_IMG, safeTitle, safeLimit, safeOffset];
+    // Order must match: manager_image, bb.buyer_id, w.user_id, title, limit, offset
+    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, safeTitle, safeLimit, safeOffset] : [MANAGER_IMG, safeTitle, safeLimit, safeOffset];
   }
 
   console.log('=== getVehiclesByGroup DEBUG ===');
@@ -396,7 +404,7 @@ export async function getVehiclesByGroup(
     rc_availability: r.rc_availability == null ? null : Boolean(r.rc_availability),
     repo_date: r.repo_date ? new Date(r.repo_date).toISOString() : null,
     regs_no: r.regs_no ?? null,
-    is_favorite: false,
+    is_favorite: (r as any).is_favorite === 1,
     manufacture_year: r.manufacture_year ?? null,
     vehicleId: r.vehicle_id,
     imgIndex: (r as any).img_index ?? 1,
@@ -507,7 +515,8 @@ export async function searchVehiclesByGroup(
       ? AS manager_image,
       v.added_on,
       ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
-      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status,
+      ${buyerId ? 'CASE WHEN MAX(w.user_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS is_favorite
     FROM vehicles v
     ${join}
     ${buyerId ? `LEFT JOIN (
@@ -521,6 +530,7 @@ export async function searchVehiclesByGroup(
         AND bb2.buyer_id = bb1.buyer_id
       )
     ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
+    ${buyerId ? 'LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?' : ''}
     WHERE ${where} AND ${searchCondition}
     GROUP BY v.vehicle_id
     ORDER BY v.added_on DESC
@@ -533,7 +543,7 @@ export async function searchVehiclesByGroup(
     // For "all" type, no title parameter is needed since where = "1=1"
     params = [
       MANAGER_IMG,
-      ...(buyerId ? [buyerId] : []),
+      ...(buyerId ? [buyerId, buyerId] : []),
       ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
       safeLimit,
       safeOffset,
@@ -542,7 +552,7 @@ export async function searchVehiclesByGroup(
     // For "state" and "auction_status" types, title parameter is needed
     params = [
       MANAGER_IMG,
-      ...(buyerId ? [buyerId] : []),
+      ...(buyerId ? [buyerId, buyerId] : []),
       safeTitle,
       ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
       safeLimit,
@@ -592,7 +602,7 @@ export async function searchVehiclesByGroup(
       manager_email: r.manager_email ?? null,
       manager_image: r.manager_image ?? MANAGER_IMG,
       manager_id: r.manager_id != null ? String(r.manager_id) : null,
-      is_favorite: false,
+      is_favorite: (r as any).is_favorite === 1,
     }));
     
     console.log('Final result count:', result.length);
@@ -636,7 +646,8 @@ export async function getVehicleDetails(
       st.staff_id AS manager_id,
       ? AS manager_image,
       ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
-      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status,
+      ${buyerId ? 'CASE WHEN MAX(w.user_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS is_favorite
     FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
     LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
@@ -656,11 +667,12 @@ export async function getVehicleDetails(
         AND bb2.buyer_id = bb1.buyer_id
       )
     ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
+    ${buyerId ? 'LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?' : ''}
     WHERE v.vehicle_id = ?
     GROUP BY v.vehicle_id
     LIMIT 1`;
 
-  const params = buyerId ? [MANAGER_IMG, buyerId, vehicleId] : [MANAGER_IMG, vehicleId];
+  const params = buyerId ? [MANAGER_IMG, buyerId, buyerId, vehicleId] : [MANAGER_IMG, vehicleId];
   
   const [rows] = await db.query<RowDataPacket[]>(sql, params);
 
@@ -685,7 +697,7 @@ export async function getVehicleDetails(
     rc_availability: r.rc_availability == null ? null : Boolean(r.rc_availability),
     repo_date: r.repo_date ? new Date(r.repo_date).toISOString() : null,
     regs_no: r.regs_no ?? null,
-    is_favorite: false,
+    is_favorite: (r as any).is_favorite === 1,
     manufacture_year: r.manufacture_year ?? null,
     vehicleId: r.vehicle_id,
     imgIndex: (r as any).img_index ?? 1,
@@ -812,29 +824,30 @@ export async function filterVehiclesByGroup(
   const sql = `
     SELECT
       v.vehicle_id,
-      v.auction_end_dttm AS end_time,
-      v.odometer_reading AS odometer,
-      ft.fuel_type AS fuel,
-      v.vehicle_image_id,
-      tt.transmission_name AS transmissionType,
-      v.rc_availability,
-      v.repo_date,
-      os.ownership AS ownership_label,
-      mk.make_name AS make,
-      vmi.img_extension AS img_extension,
-      md.model_name AS model,
-      vv.variant_name AS variant,
-      v.manufacturing_year AS manufacture_year,
-      COALESCE(v.expected_price, v.base_price) AS bid_amount,
-      st.staff AS manager_name,
-      st.phone AS manager_phone,
-      st.email AS manager_email,
-      st.staff_id AS manager_id,
+      MAX(v.auction_end_dttm) AS end_time,
+      MAX(v.odometer_reading) AS odometer,
+      MAX(ft.fuel_type) AS fuel,
+      MAX(v.vehicle_image_id) AS vehicle_image_id,
+      MAX(tt.transmission_name) AS transmissionType,
+      MAX(v.rc_availability) AS rc_availability,
+      MAX(v.repo_date) AS repo_date,
+      MAX(os.ownership) AS ownership_label,
+      MAX(mk.make_name) AS make,
+      MAX(vmi.img_extension) AS img_extension,
+      MAX(md.model_name) AS model,
+      MAX(vv.variant_name) AS variant,
+      MAX(v.manufacturing_year) AS manufacture_year,
+      MAX(COALESCE(v.expected_price, v.base_price)) AS bid_amount,
+      MAX(st.staff) AS manager_name,
+      MAX(st.phone) AS manager_phone,
+      MAX(st.email) AS manager_email,
+      MAX(st.staff_id) AS manager_id,
       ? AS manager_image,
-      v.regs_no AS regs_no,
-      v.added_on,
+      MAX(v.regs_no) AS regs_no,
+      MAX(v.added_on) AS added_on,
       ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
-      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status,
+      ${buyerId ? 'CASE WHEN MAX(w.user_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS is_favorite
     FROM vehicles v
     ${join}
     LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
@@ -849,6 +862,7 @@ export async function filterVehiclesByGroup(
         AND bb2.buyer_id = bb1.buyer_id
       )
     ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
+    ${buyerId ? 'LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?' : ''}
     WHERE ${whereClause}
     GROUP BY v.vehicle_id
     ORDER BY v.added_on DESC
@@ -857,9 +871,9 @@ export async function filterVehiclesByGroup(
 
   let params: any[];
   if (type === "all") {
-    params = buyerId ? [MANAGER_IMG, buyerId, ...filterParams, safeLimit, safeOffset] : [MANAGER_IMG, ...filterParams, safeLimit, safeOffset];
+    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, ...filterParams, safeLimit, safeOffset] : [MANAGER_IMG, ...filterParams, safeLimit, safeOffset];
   } else {
-    params = buyerId ? [MANAGER_IMG, buyerId, safeTitle, ...filterParams, safeLimit, safeOffset] : [MANAGER_IMG, safeTitle, ...filterParams, safeLimit, safeOffset];
+    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, safeTitle, ...filterParams, safeLimit, safeOffset] : [MANAGER_IMG, safeTitle, ...filterParams, safeLimit, safeOffset];
   }
 
   try {
@@ -906,7 +920,7 @@ export async function filterVehiclesByGroup(
       manager_email: r.manager_email ?? null,
       manager_image: r.manager_image ?? MANAGER_IMG,
       manager_id: r.manager_id != null ? String(r.manager_id) : null,
-      is_favorite: false,
+      is_favorite: (r as any).is_favorite === 1,
     }));
     
     console.log('Final result count:', result.length);
