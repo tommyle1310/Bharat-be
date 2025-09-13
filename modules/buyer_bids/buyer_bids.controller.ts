@@ -4,22 +4,23 @@ import * as vehicleDao from '../vehicles/vehicle.dao';
 import { getRedis } from '../../config/redis';
 import { getIO } from '../../config/socket';
 import { checkBuyerAccess } from '../buyer_access/buyer_access.dao';
+import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationError, sendBusinessError } from '../../utils/response';
 
 export async function history(req: Request, res: Response) {
   const buyerId = Number(req.params.buyerId);
-  if (Number.isNaN(buyerId)) return res.status(400).json({ message: 'Invalid buyerId' });
+  if (Number.isNaN(buyerId)) return sendValidationError(res, 'Invalid buyerId');
   const rows = await dao.getBuyerBidHistory(buyerId);
-  res.json(rows);
+  return sendSuccess(res, 'Bid history retrieved successfully', rows);
 }
 
 export async function historyByVehicle(req: Request, res: Response) {
   const buyerId = Number(req.params.buyerId);
   const vehicleId = Number(req.params.vehicleId);
   if (Number.isNaN(buyerId) || Number.isNaN(vehicleId)) {
-    return res.status(400).json({ message: 'Invalid buyerId or vehicleId' });
+    return sendValidationError(res, 'Invalid buyerId or vehicleId');
   }
   const rows = await dao.getBuyerBidHistoryByVehicle(buyerId, vehicleId);
-  res.json(rows);
+  return sendSuccess(res, 'Bid history by vehicle retrieved successfully', rows);
 }
 
 export async function manualBid(req: Request, res: Response) {
@@ -28,42 +29,42 @@ export async function manualBid(req: Request, res: Response) {
   const vehicleId = Number(vehicle_id);
   const bidAmt = Number(bid_amount);
   if ([buyerId, vehicleId, bidAmt].some((v) => Number.isNaN(v))) {
-    return res.status(400).json({ message: 'buyer_id, vehicle_id, bid_amount are required' });
+    return sendValidationError(res, 'buyer_id, vehicle_id, bid_amount are required');
   }
 
   const vehicle = await vehicleDao.getVehicleById(vehicleId);
-  if (!vehicle) return res.status(404).json({ message: 'Vehicle not found' });
+  if (!vehicle) return sendNotFound(res, 'Vehicle not found');
 
   // Check buyer access first
   try {
     const accessCheck = await checkBuyerAccess(buyerId, vehicleId);
     if (!accessCheck.hasAccess) {
       const accessTypes = accessCheck.missingAccess.join(', ');
-      return res.status(403).json({ message: `You don't have access to place bid on ${accessTypes}` });
+      return sendForbidden(res, `You don't have access to place bid on ${accessTypes}`);
     }
   } catch (accessError) {
-    return res.status(403).json({ message: (accessError as Error).message });
+    return sendForbidden(res, (accessError as Error).message);
   }
 
   // Check max price limit
   if (vehicle.max_price != null && bidAmt > Number(vehicle.max_price)) {
-    return res.status(400).json({ message: `You bid too high!` });
+    return sendBusinessError(res, 'You bid too high!');
   }
 
   if (vehicle.base_price != null && bidAmt < Number(vehicle.base_price)) {
-    return res.status(400).json({ message: 'Bid amount did not reach base price' });
+    return sendBusinessError(res, 'Bid amount did not reach base price');
   }
 
   const lastBid = await dao.getLatestBuyerBidForVehicle(buyerId, vehicleId);
   console.log(`Debug: buyerId=${buyerId}, vehicleId=${vehicleId}, lastBid=${lastBid}, bidAmt=${bidAmt}`);
   if (lastBid != null) {
     if (bidAmt <= lastBid) {
-      return res.status(400).json({ message: 'Bid must be higher than previous bid' });
+      return sendBusinessError(res, 'Bid must be higher than previous bid');
     }
     const bidDifference = bidAmt - lastBid;
     console.log(`Debug: bidDifference=${bidDifference}`);
     if (bidDifference < 1000) {
-      return res.status(400).json({ message: 'Bid difference must be at least 1000' });
+      return sendBusinessError(res, 'Bid difference must be at least 1000');
     }
   }
 
@@ -86,13 +87,15 @@ export async function manualBid(req: Request, res: Response) {
     user_id: 0,
   });
 
-  // Update vehicle table with new top bidder if this is the new top bid
+  // Update vehicle table with bidders_count and top_bidder_id
+  const { updateVehicleBidderInfo } = await import('../vehicles/vehicle.dao');
+  // Get the current top bidder after the bid was placed
+  const currentTopBidAfterBid = await dao.getTopBidForVehicle(vehicleId);
+  const topBidderId = currentTopBidAfterBid ? currentTopBidAfterBid.buyer_id : null;
+  await updateVehicleBidderInfo(vehicleId, topBidderId);
+  
+  // Update other buyer bids to set top_bid_at_insert to 0 if this is the new top bid
   if (isTopBid) {
-    await vehicleDao.updateVehicle(vehicleId, {
-      top_bidder_id: buyerId
-    });
-    
-    // Update other buyer bids to set top_bid_at_insert to 0
     await dao.updateOtherBuyerBidsTopBidStatus(vehicleId, buyerId);
 
     // Publish winner update so server can forward via Socket.IO
@@ -120,7 +123,7 @@ export async function manualBid(req: Request, res: Response) {
     }
   }
 
-  res.status(201).json({ message: 'Bid placed' });
+  return sendSuccess(res, 'Bid placed successfully', { vehicleId, buyerId, bidAmt });
 }
 
 

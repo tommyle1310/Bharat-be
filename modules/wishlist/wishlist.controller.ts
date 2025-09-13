@@ -1,19 +1,20 @@
 import { Request, Response } from 'express';
 import * as service from './wishlist.service';
+import { sendSuccess, sendError, sendInternalError, sendValidationError } from '../../utils/response';
 
 export async function list(req: Request, res: Response) {
   const buyerId = req.buyer?.id;
   const limit = Number(req.query.limit ?? 50);
   const offset = Number(req.query.offset ?? 0);
   const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
-  if (!buyerId) return res.status(400).json({ message: 'Invalid buyer' });
+  if (!buyerId) return sendValidationError(res, 'Invalid buyer');
   const items = await service.list(buyerId, businessVertical, limit, offset);
-  res.json(items);
+  return sendSuccess(res, 'Wishlist retrieved successfully', items);
 }
 
 export async function updatePreferences(req: Request, res: Response) {
   const buyerId = req.buyer?.id;
-  if (!buyerId) return res.status(400).json({ message: 'Invalid buyer' });
+  if (!buyerId) return sendValidationError(res, 'Invalid buyer');
 
   const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
 
@@ -41,21 +42,21 @@ export async function updatePreferences(req: Request, res: Response) {
       subcategoryIds,
       categoryId,
     });
-    res.json({ success: true, updated: result });
+    return sendSuccess(res, 'Wishlist preferences updated successfully', { success: true, updated: result });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to update wishlist preferences' });
+    return sendInternalError(res, 'Failed to update wishlist preferences');
   }
 }
 
 export async function getConfiguration(req: Request, res: Response) {
   const buyerId = req.buyer?.id;
-  if (!buyerId) return res.status(400).json({ message: 'Invalid buyer' });
+  if (!buyerId) return sendValidationError(res, 'Invalid buyer');
 
   try {
     const configuration = await service.getConfiguration(buyerId);
-    res.json({ success: true, configuration });
+    return sendSuccess(res, 'Wishlist configuration retrieved successfully', { success: true, configuration });
   } catch (err) {
-    res.status(500).json({ message: 'Failed to get wishlist configuration' });
+    return sendInternalError(res, 'Failed to get wishlist configuration');
   }
 }
 

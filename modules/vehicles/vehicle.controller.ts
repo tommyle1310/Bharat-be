@@ -1,47 +1,48 @@
 import { Request, Response } from 'express';
 import * as service from './vehicle.service';
+import { sendSuccess, sendError, sendNotFound, sendCreated, sendNoContent, sendValidationError } from '../../utils/response';
 
 export async function list(req: Request, res: Response) {
   const limit = Number(req.query.limit ?? 50);
   const offset = Number(req.query.offset ?? 0);
   const data = await service.list(limit, offset);
-  res.json(data);
+  return sendSuccess(res, 'Vehicles retrieved successfully', data);
 }
 
 export async function get(req: Request, res: Response) {
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
-    return res.status(400).json({ message: 'Invalid vehicle id' });
+    return sendValidationError(res, 'Invalid vehicle id');
   }
   const buyerId = req.buyer?.id;
   const item = await service.getVehicleDetails(id, buyerId);
-  if (!item) return res.status(404).json({ message: 'Vehicle not found' });
-  res.json(item);
+  if (!item) return sendNotFound(res, 'Vehicle not found');
+  return sendSuccess(res, 'Vehicle details retrieved successfully', item);
 }
 
 export async function create(req: Request, res: Response) {
   const created = await service.create(req.body);
-  res.status(201).json(created);
+  return sendCreated(res, 'Vehicle created successfully', created);
 }
 
 export async function update(req: Request, res: Response) {
   const id = Number(req.params.id);
   const updated = await service.update(id, req.body);
-  if (!updated) return res.status(404).json({ message: 'Vehicle not found' });
-  res.json(updated);
+  if (!updated) return sendNotFound(res, 'Vehicle not found');
+  return sendSuccess(res, 'Vehicle updated successfully', updated);
 }
 
 export async function remove(req: Request, res: Response) {
   const id = Number(req.params.id);
   const ok = await service.remove(id);
-  if (!ok) return res.status(404).json({ message: 'Vehicle not found' });
-  res.status(204).send();
+  if (!ok) return sendNotFound(res, 'Vehicle not found');
+  return sendNoContent(res, 'Vehicle removed successfully');
 }
 
 export async function groups(req: Request, res: Response) {
   const businessVertical = String(req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
   const data = await service.groups(businessVertical);
-  res.json(data);
+  return sendSuccess(res, 'Vehicle groups retrieved successfully', data);
 }
 
 export async function listByGroup(req: Request, res: Response) {
@@ -59,17 +60,17 @@ export async function listByGroup(req: Request, res: Response) {
   console.log('check', type, title, limit, offset);
   
   if (!type || !(title)) {
-    return res.status(400).json({ message: 'type and title query params are required' });
+    return sendValidationError(res, 'type and title query params are required');
   }
   
   // Validate type is one of the allowed values
   if (!['state', 'auction_status', 'all'].includes(type)) {
-    throw new Error('Invalid type. Must be "state", "auction_status", or "all"');
+    return sendValidationError(res, 'Invalid type. Must be "state", "auction_status", or "all"');
   }
 
   const buyerId = req.buyer?.id;
   const data = await service.listByGroup(type as 'state' | 'auction_status' | 'all', title, limit, offset, buyerId, businessVertical);
-  res.json(data);
+  return sendSuccess(res, 'Vehicles by group retrieved successfully', data);
 }
 
 export async function search(req: Request, res: Response) {
@@ -78,7 +79,7 @@ export async function search(req: Request, res: Response) {
   const offset = Number(req.query.offset ?? 0);
   const buyerId = req.buyer?.id;
   const data = await service.searchVehicles(keyword, limit, offset, buyerId);
-  res.json(data);
+  return sendSuccess(res, 'Vehicle search completed successfully', data);
 }
 export async function searchByGroup(req: Request, res: Response) {
   const keyword = String(req.query.keyword);
@@ -89,7 +90,7 @@ export async function searchByGroup(req: Request, res: Response) {
   const buyerId = req.buyer?.id;
   const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
   const data = await service.searchVehiclesByGroup(keyword, type as 'state' | 'auction_status' | 'all', title, limit, offset, buyerId, businessVertical);
-  res.json(data);
+  return sendSuccess(res, 'Vehicle search by group completed successfully', data);
 }
 
 export async function filterByGroup(req: Request, res: Response) {
@@ -105,12 +106,12 @@ export async function filterByGroup(req: Request, res: Response) {
   const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
   
   if (!type || !title) {
-    return res.status(400).json({ message: 'type and title query params are required' });
+    return sendValidationError(res, 'type and title query params are required');
   }
   
   // Validate type is one of the allowed values
   if (!['state', 'auction_status', 'all'].includes(type)) {
-    return res.status(400).json({ message: 'Invalid type. Must be "state", "auction_status", or "all"' });
+    return sendValidationError(res, 'Invalid type. Must be "state", "auction_status", or "all"');
   }
 
   const buyerId = req.buyer?.id;
@@ -127,39 +128,39 @@ export async function filterByGroup(req: Request, res: Response) {
     buyerId,
     businessVertical
   );
-  res.json(data);
+  return sendSuccess(res, 'Vehicle filter by group completed successfully', data);
 }
 
 export async function getOwnershipTypes(req: Request, res: Response) {
   const data = await service.getOwnershipTypes();
-  res.json(data);
+  return sendSuccess(res, 'Ownership types retrieved successfully', data);
 }
 
 export async function getFuelTypes(req: Request, res: Response) {
   const data = await service.getFuelTypes();
-  res.json(data);
+  return sendSuccess(res, 'Fuel types retrieved successfully', data);
 }
 
-  export async function getVehicleTypes(req: Request, res: Response) {
-    const data = await service.getVehicleTypes();
-    res.json(data);
-  }
+export async function getVehicleTypes(req: Request, res: Response) {
+  const data = await service.getVehicleTypes();
+  return sendSuccess(res, 'Vehicle types retrieved successfully', data);
+}
 
 export async function getVehicleSubcategories(req: Request, res: Response) {
   const data = await service.getVehicleSubcategories();
-  res.json(data);
+  return sendSuccess(res, 'Vehicle subcategories retrieved successfully', data);
 }
-  export async function getSelectedVehicleImages(req: Request, res: Response) {
-    console.log("req.query:", req.query); // debug
-    const id = Number(req.query.id);
-  
-    if (isNaN(id)) {
-      return res.status(400).json({ error: "Invalid vehicle_id" });
-    }
-  
-    const data = await service.getSelectedVehicleImages(id);
-    res.json(data);
+export async function getSelectedVehicleImages(req: Request, res: Response) {
+  console.log("req.query:", req.query); // debug
+  const id = Number(req.query.id);
+
+  if (isNaN(id)) {
+    return sendValidationError(res, "Invalid vehicle_id");
   }
+
+  const data = await service.getSelectedVehicleImages(id);
+  return sendSuccess(res, 'Vehicle images retrieved successfully', data);
+}
   
   
 

@@ -53,6 +53,34 @@ export async function deleteVehicle(id: number): Promise<boolean> {
   return res.affectedRows > 0;
 }
 
+export async function updateVehicleBidderInfo(
+  vehicleId: number,
+  topBidderId: number | null
+): Promise<boolean> {
+  const db: Pool = getDb();
+  
+  // First, get the current bidders_count
+  const [currentRows] = await db.query<RowDataPacket[]>(
+    `SELECT bidders_count FROM ${TABLE} WHERE vehicle_id = ?`,
+    [vehicleId]
+  );
+  
+  if (currentRows.length === 0) {
+    return false;
+  }
+  
+  const currentBiddersCount = currentRows[0]?.bidders_count || 0;
+  const newBiddersCount = currentBiddersCount + 1;
+  
+  // Update both bidders_count and top_bidder_id
+  const [res] = await db.query<ResultSetHeader>(
+    `UPDATE ${TABLE} SET bidders_count = ?, top_bidder_id = ? WHERE vehicle_id = ?`,
+    [newBiddersCount, topBidderId, vehicleId]
+  );
+  
+  return res.affectedRows > 0;
+}
+
 export interface VehicleGroupItem {
   id: string;
   type: "state" | "auction_status" | "all";

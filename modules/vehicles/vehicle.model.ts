@@ -21,6 +21,7 @@ export interface Vehicle {
   additional_remarks?: string | null;
   notes?: string | null;
   top_bidder_id?: number | null;
+  bidders_count?: number | null;
   added_by_id?: number | null;
   updated_by_id?: number | null;
   added_on?: string | null;
