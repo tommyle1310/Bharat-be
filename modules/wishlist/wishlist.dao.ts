@@ -9,6 +9,7 @@ export interface WishlistItem {
   fuel: string | null;
   owner_serial: string | null;
   state_code?: string | null;
+  has_bidded: boolean;
   img_extension: string | null;
   make: string | null;
   model: string | null;
@@ -76,7 +77,9 @@ export async function getWishlist(
         (CASE WHEN bst.state_id IS NULL THEN 0 ELSE 1 END) +
         (CASE WHEN bsl.seller_id IS NULL THEN 0 ELSE 1 END) +
         (CASE WHEN bmk.make_id IS NULL THEN 0 ELSE 1 END)
-      ) AS total_flags
+      ) AS total_flags,
+      CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END AS has_bidded,
+      CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN 'Winning' ELSE 'Losing' END AS bidding_status
     FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
     LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
@@ -95,13 +98,26 @@ export async function getWishlist(
       ON bsl.seller_id = v.seller_id AND bsl.buyer_id = ?
     LEFT JOIN buyer_preference_make bmk
       ON bmk.make_id = v.vehicle_make_id AND bmk.buyer_id = ?
+    LEFT JOIN (
+      SELECT bb1.vehicle_id, bb1.buyer_id, bb1.top_bid_at_insert
+      FROM buyer_bids bb1
+      WHERE bb1.buyer_id = ?
+      AND bb1.created_dttm = (
+        SELECT MAX(bb2.created_dttm)
+        FROM buyer_bids bb2
+        WHERE bb2.vehicle_id = bb1.vehicle_id
+        AND bb2.buyer_id = bb1.buyer_id
+      )
+    ) bb ON bb.vehicle_id = v.vehicle_id
     WHERE 1=1 ${categoryFilter}
+    GROUP BY v.vehicle_id
     HAVING total_flags >= 4
     ORDER BY v.added_on DESC
     LIMIT ? OFFSET ?`;
 
   const params = [
     MANAGER_IMG,
+    buyerId,
     buyerId,
     buyerId,
     buyerId,
@@ -183,6 +199,7 @@ export async function getWishlist(
       fuel: r.fuel ?? null,
       owner_serial: r.ownership_serial ?? null,
       state_code: typeof r.regs_no === 'string' && r.regs_no.length >= 2 ? r.regs_no.substring(0,2) : null,
+      has_bidded: (r as any).has_bidded === 1,
       make: r.make ?? null,
       model: r.model ?? null,
       variant: r.variant ?? null,
@@ -195,7 +212,7 @@ export async function getWishlist(
       manufacture_year: r.manufacture_year ?? null,
       vehicleId: r.vehicle_id,
       imgIndex: (r as any).img_index ?? 1,
-      bidding_status: null,
+      bidding_status: r.bidding_status ?? null,
       bid_amount: r.bid_amount != null ? String(r.bid_amount) : null,
       manager_name: r.manager_name ?? null,
       manager_phone: r.manager_phone ?? null,
@@ -314,5 +331,46 @@ export async function updateWishlistPreferences(input: UpdatePreferencesInput) {
   } finally {
     connection.release();
   }
+}
+
+export interface WishlistConfiguration {
+  state: number[];
+  seller: number[];
+  subcategory: number[];
+  vehicleType: number[];
+  make: number[];
+}
+
+export async function getWishlistConfiguration(buyerId: number): Promise<WishlistConfiguration> {
+  const db: Pool = getDb();
+  
+  // Get all preference IDs for the buyer
+  const [vehicleTypeRows] = await db.query<RowDataPacket[]>(`
+    SELECT vehicletype_id FROM buyer_preference_vehicletype WHERE buyer_id = ?
+  `, [buyerId]);
+
+  const [makeRows] = await db.query<RowDataPacket[]>(`
+    SELECT make_id FROM buyer_preference_make WHERE buyer_id = ?
+  `, [buyerId]);
+
+  const [sellerRows] = await db.query<RowDataPacket[]>(`
+    SELECT seller_id FROM buyer_preference_seller WHERE buyer_id = ?
+  `, [buyerId]);
+
+  const [stateRows] = await db.query<RowDataPacket[]>(`
+    SELECT state_id FROM buyer_preference_state WHERE buyer_id = ?
+  `, [buyerId]);
+
+  const [subcategoryRows] = await db.query<RowDataPacket[]>(`
+    SELECT subcategory_id FROM buyer_preference_subcategory WHERE buyer_id = ?
+  `, [buyerId]);
+
+  return {
+    state: stateRows.map(row => row.state_id),
+    seller: sellerRows.map(row => row.seller_id),
+    subcategory: subcategoryRows.map(row => row.subcategory_id),
+    vehicleType: vehicleTypeRows.map(row => row.vehicletype_id),
+    make: makeRows.map(row => row.make_id),
+  };
 }
 

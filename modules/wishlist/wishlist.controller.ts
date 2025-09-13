@@ -47,4 +47,16 @@ export async function updatePreferences(req: Request, res: Response) {
   }
 }
 
+export async function getConfiguration(req: Request, res: Response) {
+  const buyerId = req.buyer?.id;
+  if (!buyerId) return res.status(400).json({ message: 'Invalid buyer' });
+
+  try {
+    const configuration = await service.getConfiguration(buyerId);
+    res.json({ success: true, configuration });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to get wishlist configuration' });
+  }
+}
+
 

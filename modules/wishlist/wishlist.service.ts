@@ -22,4 +22,8 @@ export async function updatePreferences(input: UpdatePreferencesInput) {
   return dao.updateWishlistPreferences(input);
 }
 
+export async function getConfiguration(buyerId: number) {
+  return dao.getWishlistConfiguration(buyerId);
+}
+
 

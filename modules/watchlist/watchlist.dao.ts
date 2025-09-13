@@ -60,6 +60,7 @@ export interface WatchlistItem {
   fuel: string | null;
   owner_serial: string | null;
   state_code?: string | null;
+  has_bidded: boolean;
   img_extension: string | null;
   make: string | null;
   model: string | null;
@@ -108,7 +109,9 @@ export async function getWatchlist(userId: number, limit = 50, offset = 0): Prom
       st.email AS manager_email,
       st.staff_id AS manager_id,
       ? AS manager_image,
-      v.added_on
+      v.added_on,
+      CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END AS has_bidded,
+      CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN 'Winning' ELSE 'Losing' END AS bidding_status
     FROM watchlist w
     INNER JOIN vehicles v ON v.vehicle_id = w.vehicle_id AND w.user_id = ?
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
@@ -118,10 +121,22 @@ export async function getWatchlist(userId: number, limit = 50, offset = 0): Prom
     LEFT JOIN vehicle_images vmi ON vmi.vehicle_image_id = v.vehicle_image_id
     LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
     LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
+    LEFT JOIN (
+      SELECT bb1.vehicle_id, bb1.buyer_id, bb1.top_bid_at_insert
+      FROM buyer_bids bb1
+      WHERE bb1.buyer_id = ?
+      AND bb1.created_dttm = (
+        SELECT MAX(bb2.created_dttm)
+        FROM buyer_bids bb2
+        WHERE bb2.vehicle_id = bb1.vehicle_id
+        AND bb2.buyer_id = bb1.buyer_id
+      )
+    ) bb ON bb.vehicle_id = v.vehicle_id
+    GROUP BY v.vehicle_id
     ORDER BY v.added_on DESC
     LIMIT ? OFFSET ?`;
 
-  const [rows] = await db.query<RowDataPacket[]>(sql, [MANAGER_IMG, userId, limit, offset]);
+  const [rows] = await db.query<RowDataPacket[]>(sql, [MANAGER_IMG, userId, userId, limit, offset]);
 
   return rows.map((r) => ({
     vehicle_id: String(r.vehicle_id),
@@ -130,6 +145,7 @@ export async function getWatchlist(userId: number, limit = 50, offset = 0): Prom
     fuel: r.fuel ?? null,
     owner_serial: r.ownership_serial ?? null,
     state_code: typeof r.regs_no === 'string' && r.regs_no.length >= 2 ? r.regs_no.substring(0,2) : null,
+    has_bidded: (r as any).has_bidded === 1,
     make: r.make ?? null,
     model: r.model ?? null,
     variant: r.variant ?? null,
@@ -142,7 +158,7 @@ export async function getWatchlist(userId: number, limit = 50, offset = 0): Prom
     manufacture_year: r.manufacture_year ?? null,
     vehicleId: r.vehicle_id,
     imgIndex: (r as any).img_index ?? 1,
-    bidding_status: null,
+    bidding_status: r.bidding_status ?? null,
     bid_amount: r.bid_amount != null ? String(r.bid_amount) : null,
     manager_name: r.manager_name ?? null,
     manager_phone: r.manager_phone ?? null,
