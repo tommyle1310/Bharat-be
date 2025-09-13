@@ -79,7 +79,8 @@ export async function getWishlist(
         (CASE WHEN bmk.make_id IS NULL THEN 0 ELSE 1 END)
       ) AS total_flags,
       CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END AS has_bidded,
-      CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN 'Winning' ELSE 'Losing' END AS bidding_status
+      CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN 'Winning' ELSE 'Losing' END AS bidding_status,
+      CASE WHEN MAX(w.user_id) IS NULL THEN 0 ELSE 1 END AS is_favorite
     FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
     LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
@@ -109,6 +110,7 @@ export async function getWishlist(
         AND bb2.buyer_id = bb1.buyer_id
       )
     ) bb ON bb.vehicle_id = v.vehicle_id
+    LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?
     WHERE 1=1 ${categoryFilter}
     GROUP BY v.vehicle_id
     HAVING total_flags >= 4
@@ -117,6 +119,7 @@ export async function getWishlist(
 
   const params = [
     MANAGER_IMG,
+    buyerId,
     buyerId,
     buyerId,
     buyerId,
@@ -208,7 +211,7 @@ export async function getWishlist(
       rc_availability: r.rc_availability == null ? null : Boolean(r.rc_availability),
       repo_date: r.repo_date ? new Date(r.repo_date).toISOString() : null,
       regs_no: r.regs_no ?? null,
-      is_favorite: true,
+      is_favorite: (r as any).is_favorite === 1,
       manufacture_year: r.manufacture_year ?? null,
       vehicleId: r.vehicle_id,
       imgIndex: (r as any).img_index ?? 1,
