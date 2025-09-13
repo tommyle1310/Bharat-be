@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import * as dao from './auto_bid.dao';
 import * as vehicleDao from '../vehicles/vehicle.dao';
+import { checkBuyerAccess } from '../buyer_access/buyer_access.dao';
 
 export async function setAutoBid(req: Request, res: Response) {
   const { buyer_id, vehicle_id, start_amount, max_bid, step_amount } = req.body || {};
@@ -9,6 +10,15 @@ export async function setAutoBid(req: Request, res: Response) {
   const startAmt = Number(start_amount);
   const maxBid = Number(max_bid);
   const stepAmt = Number(step_amount);
+  try {
+    const accessCheck = await checkBuyerAccess(buyerId, vehicleId);
+    if (!accessCheck.hasAccess) {
+      const accessTypes = accessCheck.missingAccess.join(', ');
+      return res.status(403).json({ message: `You don't have access to place bid on ${accessTypes}` });
+    }
+  } catch (accessError) {
+    return res.status(403).json({ message: (accessError as Error).message });
+  }
   console.log('check set autobid', buyerId, vehicleId, startAmt, maxBid, stepAmt);
   if ([buyerId, vehicleId, startAmt, maxBid, stepAmt].some((v) => Number.isNaN(v))) {
     return res.status(400).json({ message: 'buyer_id, vehicle_id, start_amount, max_bid, step_amount required' });
