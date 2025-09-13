@@ -22,6 +22,7 @@ import buyerBidRoutes from './modules/buyer_bids/buyer_bids.routes';
 import watchlistRoutes from './modules/watchlist/watchlist.routes';
 import autoBidRoutes from './modules/auto_bid/auto_bid.routes';
 import wishlistRoutes from './modules/wishlist/wishlist.routes';
+import buyerAccessRoutes from './modules/buyer_access/buyer_access.routes';
 import { API_PREFIX } from './types/app';
 
 export function createApp(): Application {
@@ -76,6 +77,7 @@ export function createApp(): Application {
   app.use(`/${API_PREFIX}/watchlist`, watchlistRoutes);
   app.use(`/${API_PREFIX}/auto-bid`, autoBidRoutes);
   app.use(`/${API_PREFIX}/wishlist`, wishlistRoutes);
+  app.use(`/${API_PREFIX}/buyer-access`, buyerAccessRoutes);
   // app.use(`/${API_PREFIX}/vehicle-types`, vehicleTypeRoutes);
   // app.use(`/${API_PREFIX}/ownership-serials`, ownershipSerialRoutes);
 

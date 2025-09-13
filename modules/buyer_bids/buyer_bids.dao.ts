@@ -2,6 +2,7 @@ import { Pool, RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { getDb } from "../../config/database";
 import { getRedis } from "../../config/redis";
 import { getIO } from "../../config/socket";
+import { checkBuyerAccess } from "../buyer_access/buyer_access.dao";
 
 export interface BuyerBidRecord {
   bid_id?: number;
@@ -132,7 +133,25 @@ export async function getLatestBuyerBidForVehicle(buyerId: number, vehicleId: nu
 }
 
 export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
+  // Check buyer access before allowing bid
+  const accessCheck = await checkBuyerAccess(bid.buyer_id, bid.vehicle_id);
+  if (!accessCheck.hasAccess) {
+    const accessTypes = accessCheck.missingAccess.join(', ');
+    throw new Error(`You don't have access to place bid on ${accessTypes}`);
+  }
+
+  // Check max price limit
   const db: Pool = getDb();
+  const [vehicleRows] = await db.query<RowDataPacket[]>(`
+    SELECT max_price FROM vehicles WHERE vehicle_id = ?
+  `, [bid.vehicle_id]);
+  
+  if (vehicleRows.length > 0 && vehicleRows[0]?.max_price != null) {
+    const maxPrice = Number(vehicleRows[0].max_price);
+    if (bid.bid_amt > maxPrice) {
+      throw new Error(`You bid too high!`);
+    }
+  }
   const [res] = await db.query<ResultSetHeader>(
     `INSERT INTO ${BUYER_BIDS_TABLE}
      (vehicle_id, buyer_id, bid_amt, is_surrogate, bid_mode, top_bid_at_insert, created_dttm, user_id)

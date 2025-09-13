@@ -70,8 +70,8 @@ export function startAutoBidRunner() {
             // Validate within buyer's budget and vehicle constraints
             if (initialBidAmt > maxBidAmt) {
               console.log(`[AUTO-BID-RUNNER][INIT] Skip initial insert: initialBidAmt(${initialBidAmt}) > maxBidAmt(${maxBidAmt})`);
-            } else if (initialBidAmt >= vehicleMaxAllowed) {
-              console.log(`[AUTO-BID-RUNNER][INIT] Skip initial insert: initialBidAmt(${initialBidAmt}) >= vehicle max allowed (${vehicleMaxAllowed})`);
+            } else if (initialBidAmt > vehicleMaxAllowed) {
+              console.log(`[AUTO-BID-RUNNER][INIT] Skip initial insert: initialBidAmt(${initialBidAmt}) > vehicle max allowed (${vehicleMaxAllowed})`);
             } else {
               const willBeTopBid = initialBidAmt > topAmt || (initialBidAmt === topAmt && topBidderId !== buyerId);
               const topBidAtInsert = willBeTopBid ? 1 : 0;
@@ -122,7 +122,7 @@ export function startAutoBidRunner() {
 
           // Respect budget and vehicle limits
           if (nextBidAmt > maxBidAmt) break;
-          if (nextBidAmt >= maxAllowed) break;
+          if (nextBidAmt > maxAllowed) break;
 
           processed = true;
           pendingSteps -= 1;

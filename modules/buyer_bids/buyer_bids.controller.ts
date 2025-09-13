@@ -3,6 +3,7 @@ import * as dao from './buyer_bids.dao';
 import * as vehicleDao from '../vehicles/vehicle.dao';
 import { getRedis } from '../../config/redis';
 import { getIO } from '../../config/socket';
+import { checkBuyerAccess } from '../buyer_access/buyer_access.dao';
 
 export async function history(req: Request, res: Response) {
   const buyerId = Number(req.params.buyerId);
@@ -32,6 +33,22 @@ export async function manualBid(req: Request, res: Response) {
 
   const vehicle = await vehicleDao.getVehicleById(vehicleId);
   if (!vehicle) return res.status(404).json({ message: 'Vehicle not found' });
+
+  // Check buyer access first
+  try {
+    const accessCheck = await checkBuyerAccess(buyerId, vehicleId);
+    if (!accessCheck.hasAccess) {
+      const accessTypes = accessCheck.missingAccess.join(', ');
+      return res.status(403).json({ message: `You don't have access to place bid on ${accessTypes}` });
+    }
+  } catch (accessError) {
+    return res.status(403).json({ message: (accessError as Error).message });
+  }
+
+  // Check max price limit
+  if (vehicle.max_price != null && bidAmt > Number(vehicle.max_price)) {
+    return res.status(400).json({ message: `You bid too high!` });
+  }
 
   if (vehicle.base_price != null && bidAmt < Number(vehicle.base_price)) {
     return res.status(400).json({ message: 'Bid amount did not reach base price' });

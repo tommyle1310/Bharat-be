@@ -46,3 +46,16 @@ VALUES(0, '', '');
 INSERT INTO prod_indus_db.vehicle_subcategory
 (sub_category_id, category_id, sub_category)
 VALUES(0, 0, '');
+
+INSERT INTO prod_indus_db.buyer_access_seller
+(id, buyer_id, seller_id, category_id, updated_dttm)
+VALUES(0, 0, 0, 0, '');
+INSERT INTO prod_indus_db.buyer_access_state
+(id, buyer_id, state_id, updated_dttm, category_id)
+VALUES(0, 0, 0, '', 0);
+INSERT INTO prod_indus_db.buyer_access_subcategory
+(id, buyer_id, category_id, subcategory_id, updated_dttm)
+VALUES(0, 0, 0, 0, '');
+INSERT INTO prod_indus_db.buyer_access_vehicletype
+(id, buyer_id, vehicletype_id, category_id, updated_dttm)
+VALUES(0, 0, 0, 0, '');
