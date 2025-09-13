@@ -17,6 +17,7 @@ router.get('/:businessVertical/filter-by-group', requireBuyerAuth, ctrl.filterBy
 router.get('/lookup/ownership', ctrl.getOwnershipTypes);
 router.get('/lookup/fuel', ctrl.getFuelTypes);
 router.get('/lookup/vehicle-types', ctrl.getVehicleTypes);
+router.get('/lookup/vehicle-subcategories', ctrl.getVehicleSubcategories);
 router.get('/lookup/vehicle-images', ctrl.getSelectedVehicleImages);
 
 // Standard CRUD

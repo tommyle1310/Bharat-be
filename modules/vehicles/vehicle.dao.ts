@@ -987,3 +987,11 @@ export async function getVehicleTypes() {
   return rows;
 }
 
+export async function getVehicleSubcategories() {
+  const db: Pool = getDb();
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT * FROM vehicle_subcategory ORDER BY sub_category_id ASC`
+  );
+  return rows;
+}
+

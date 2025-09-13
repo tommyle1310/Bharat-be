@@ -144,6 +144,11 @@ export async function getFuelTypes(req: Request, res: Response) {
     const data = await service.getVehicleTypes();
     res.json(data);
   }
+
+export async function getVehicleSubcategories(req: Request, res: Response) {
+  const data = await service.getVehicleSubcategories();
+  res.json(data);
+}
   export async function getSelectedVehicleImages(req: Request, res: Response) {
     console.log("req.query:", req.query); // debug
     const id = Number(req.query.id);

@@ -43,3 +43,6 @@ VALUES(0, 0, 0, 0, '', 0, 0, 0, 0, 0, 0, 0, '', '', 0, 0, 0, 0, '', '', '', 0, 0
 INSERT INTO prod_indus_db.states
 (id, state, region)
 VALUES(0, '', '');
+INSERT INTO prod_indus_db.vehicle_subcategory
+(sub_category_id, category_id, sub_category)
+VALUES(0, 0, '');

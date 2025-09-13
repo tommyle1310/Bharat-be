@@ -75,23 +75,7 @@ export async function getWishlist(
         (CASE WHEN bsc.subcategory_id IS NULL THEN 0 ELSE 1 END) +
         (CASE WHEN bst.state_id IS NULL THEN 0 ELSE 1 END) +
         (CASE WHEN bsl.seller_id IS NULL THEN 0 ELSE 1 END) +
-        (CASE WHEN brs.state_id IS NULL THEN 0 ELSE 1 END) +
-        (CASE WHEN bmk.make_id IS NULL THEN 0 ELSE 1 END) +
-        (
-          CASE
-            WHEN ? = '' THEN 0
-            WHEN (LOWER(?) IN ('1','true') AND COALESCE(v.rc_availability,0) = 1) THEN 1
-            WHEN (LOWER(?) IN ('0','false') AND COALESCE(v.rc_availability,0) = 0) THEN 1
-            ELSE 0
-          END
-        ) +
-        (
-          CASE
-            WHEN ? = '' THEN 0
-            WHEN FIND_IN_SET(v.fuel_type_id, ?) THEN 1
-            ELSE 0
-          END
-        )
+        (CASE WHEN bmk.make_id IS NULL THEN 0 ELSE 1 END)
       ) AS total_flags
     FROM vehicles v
     LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
@@ -109,8 +93,6 @@ export async function getWishlist(
       ON bst.state_id = v.vehicle_state_id AND bst.buyer_id = ?
     LEFT JOIN buyer_preference_seller bsl
       ON bsl.seller_id = v.seller_id AND bsl.buyer_id = ?
-    LEFT JOIN buyer_preference_regstate brs
-      ON brs.state_id = v.vehicle_state_id AND brs.buyer_id = ?
     LEFT JOIN buyer_preference_make bmk
       ON bmk.make_id = v.vehicle_make_id AND bmk.buyer_id = ?
     WHERE 1=1 ${categoryFilter}
@@ -125,12 +107,6 @@ export async function getWishlist(
     buyerId,
     buyerId,
     buyerId,
-    buyerId,
-    rcFilter,
-    rcFilter,
-    rcFilter,
-    fuelFilter,
-    fuelFilter,
     limit,
     offset,
   ];
@@ -144,12 +120,60 @@ export async function getWishlist(
     console.log('SQL:', sql);
     console.log('Params:', params);
 
+    // Check what preferences exist for this buyer
+    const [prefCheck] = await db.query<RowDataPacket[]>(`
+      SELECT 
+        'vehicletype' as table_name, COUNT(*) as count FROM buyer_preference_vehicletype WHERE buyer_id = ?
+      UNION ALL
+      SELECT 'make', COUNT(*) FROM buyer_preference_make WHERE buyer_id = ?
+      UNION ALL  
+      SELECT 'seller', COUNT(*) FROM buyer_preference_seller WHERE buyer_id = ?
+      UNION ALL
+      SELECT 'state', COUNT(*) FROM buyer_preference_state WHERE buyer_id = ?
+      UNION ALL
+      SELECT 'subcategory', COUNT(*) FROM buyer_preference_subcategory WHERE buyer_id = ?
+    `, [buyerId, buyerId, buyerId, buyerId, buyerId]);
+    console.log('Existing preferences for buyer', buyerId, ':', prefCheck);
+
     const [rows] = await db.query<RowDataPacket[]>(sql, params);
     console.log('Raw rows count:', rows.length);
     if (rows.length) {
       console.log('Sample vehicle_ids:', rows.slice(0, 10).map(r => r.vehicle_id));
       // Also log total_flags if present in driver payload
-      try { console.log('Sample total_flags:', rows.slice(0, 5).map(r => (r as any).total_flags)); } catch {}
+      try { 
+        console.log('Sample total_flags:', rows.slice(0, 5).map(r => (r as any).total_flags)); 
+      } catch {}
+    } else {
+      console.log('No vehicles found. Checking if any vehicles exist at all...');
+      const [allVehicles] = await db.query<RowDataPacket[]>('SELECT COUNT(*) as count FROM vehicles');
+      console.log('Total vehicles in database:', allVehicles);
+      
+      console.log('Checking vehicles with preferences...');
+      const [vehiclesWithPrefs] = await db.query<RowDataPacket[]>(`
+        SELECT v.vehicle_id, 
+          (CASE WHEN bvt.vehicletype_id IS NULL THEN 0 ELSE 1 END) as vt_flag,
+          (CASE WHEN bsc.subcategory_id IS NULL THEN 0 ELSE 1 END) as sc_flag,
+          (CASE WHEN bst.state_id IS NULL THEN 0 ELSE 1 END) as st_flag,
+          (CASE WHEN bsl.seller_id IS NULL THEN 0 ELSE 1 END) as sl_flag,
+          (CASE WHEN bmk.make_id IS NULL THEN 0 ELSE 1 END) as mk_flag,
+          (
+            (CASE WHEN bvt.vehicletype_id IS NULL THEN 0 ELSE 1 END) +
+            (CASE WHEN bsc.subcategory_id IS NULL THEN 0 ELSE 1 END) +
+            (CASE WHEN bst.state_id IS NULL THEN 0 ELSE 1 END) +
+            (CASE WHEN bsl.seller_id IS NULL THEN 0 ELSE 1 END) +
+            (CASE WHEN bmk.make_id IS NULL THEN 0 ELSE 1 END)
+          ) as total_flags
+        FROM vehicles v
+        LEFT JOIN buyer_preference_vehicletype bvt ON bvt.vehicletype_id = v.vehicle_type_id AND bvt.buyer_id = ?
+        LEFT JOIN buyer_preference_subcategory bsc ON bsc.subcategory_id = v.vehicle_subcategory_id AND bsc.buyer_id = ?
+        LEFT JOIN buyer_preference_state bst ON bst.state_id = v.vehicle_state_id AND bst.buyer_id = ?
+        LEFT JOIN buyer_preference_seller bsl ON bsl.seller_id = v.seller_id AND bsl.buyer_id = ?
+        LEFT JOIN buyer_preference_make bmk ON bmk.make_id = v.vehicle_make_id AND bmk.buyer_id = ?
+        WHERE 1=1 ${categoryFilter}
+        ORDER BY total_flags DESC
+        LIMIT 10
+      `, [buyerId, buyerId, buyerId, buyerId, buyerId]);
+      console.log('Sample vehicles with preference flags:', vehiclesWithPrefs);
     }
 
     return rows.map((r) => ({
@@ -193,11 +217,10 @@ export interface UpdatePreferencesInput {
   ownership: string; // not stored here
   rcAvailable: string; // not stored here
   sellerId: string; // csv
-  regstate: string; // region filter: 'North'|'West'|'South'|'East'
-  makeIds?: string; // csv
-  regStateIds?: string; // csv
   stateIds?: string; // csv
+  makeIds?: string; // csv
   subcategoryIds?: string; // csv
+  categoryId?: string; // specific category ID to use instead of businessVertical mapping
 }
 
 function mapBusinessVerticalToCategoryId(bv: 'A'|'B'|'I'): number {
@@ -218,77 +241,72 @@ function parseCsvIds(csv?: string): number[] {
 
 export async function updateWishlistPreferences(input: UpdatePreferencesInput) {
   const db = getDb();
-  const categoryId = mapBusinessVerticalToCategoryId(input.businessVertical);
+  
+  // Use specific categoryId if provided, otherwise derive from businessVertical
+  let categoryId: number;
+  if (input.categoryId && input.categoryId.trim()) {
+    categoryId = Number(input.categoryId);
+    if (isNaN(categoryId)) {
+      throw new Error('Invalid categoryId provided');
+    }
+  } else {
+    categoryId = mapBusinessVerticalToCategoryId(input.businessVertical);
+  }
 
   const vehicleTypeIds = parseCsvIds(input.vehicleType);
   const makeIds = parseCsvIds(input.makeIds);
-  const regStateIds = parseCsvIds(input.regStateIds);
   const sellerIds = parseCsvIds(input.sellerId);
   const stateIds = parseCsvIds(input.stateIds);
   const subcategoryIds = parseCsvIds(input.subcategoryIds);
 
-  // Handle regstate region filter - get state IDs from states table
-  let regionStateIds: number[] = [];
-  if (input.regstate && input.regstate.trim()) {
-    const region = input.regstate.trim();
-    const [rows] = await db.query<RowDataPacket[]>(
-      'SELECT id FROM states WHERE region = ?',
-      [region]
-    );
-    regionStateIds = rows.map(r => r.id);
-  }
-
-  const now = new Date();
-
-  const conn = db; // using pool query with transaction
-  const connection = await conn.getConnection();
+  const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
 
-    // Clear existing for this buyer/category
-    const tables = [
-      'buyer_preference_vehicletype',
-      'buyer_preference_make',
-      'buyer_preference_regstate',
-      'buyer_preference_seller',
-      'buyer_preference_state',
-      'buyer_preference_subcategory',
-    ];
-    for (const t of tables) {
-      await connection.query(`DELETE FROM ${t} WHERE buyer_id = ? AND category_id = ?`, [input.buyerId, categoryId]);
-    }
-
-    // Insert helpers
-    async function insertMany(table: string, column: string, ids: number[]) {
-      if (!ids.length) return;
-      const valuesPlaceholders = ids.map(() => '(?, ?, ?, ?, ?)').join(',');
-      const params: any[] = [];
+    // Toggleable logic: Check if preference exists, if yes delete, if no insert
+    async function togglePreference(table: string, column: string, ids: number[]) {
+      if (!ids.length) return 0;
+      
+      let operations = 0;
       for (const id of ids) {
-        params.push(0, input.buyerId, id, categoryId, 0);
+        // Check if preference exists
+        const [existing] = await connection.query<RowDataPacket[]>(
+          `SELECT id FROM ${table} WHERE buyer_id = ? AND ${column} = ? AND category_id = ?`,
+          [input.buyerId, id, categoryId]
+        );
+
+        if (existing.length > 0) {
+          // Delete existing preference (toggle off)
+          await connection.query(
+            `DELETE FROM ${table} WHERE buyer_id = ? AND ${column} = ? AND category_id = ?`,
+            [input.buyerId, id, categoryId]
+          );
+          operations--;
+        } else {
+          // Insert new preference (toggle on)
+          await connection.query(
+            `INSERT INTO ${table} (id, buyer_id, ${column}, category_id, is_surrogate, updated_dttm) VALUES (0, ?, ?, ?, 0, NOW())`,
+            [input.buyerId, id, categoryId]
+          );
+          operations++;
+        }
       }
-      // columns differ for regstate/state/make/seller/subcategory/vehicletype but order is (id,buyer_id,<col>,category_id,is_surrogate)
-      const updatedDttmSql = ', updated_dttm = VALUES(updated_dttm), is_surrogate = VALUES(is_surrogate)';
-      const sql = `INSERT INTO ${table} (id, buyer_id, ${column}, category_id, is_surrogate, updated_dttm)
-        VALUES ${ids.map(() => '(0, ?, ?, ?, 0, NOW())').join(',')}
-        ON DUPLICATE KEY UPDATE updated_dttm = NOW(), is_surrogate = 0`;
-      await connection.query(sql, ids.flatMap(id => [input.buyerId, id, categoryId]));
+      return operations;
     }
 
-    await insertMany('buyer_preference_vehicletype', 'vehicletype_id', vehicleTypeIds);
-    await insertMany('buyer_preference_make', 'make_id', makeIds);
-    await insertMany('buyer_preference_regstate', 'state_id', [...regStateIds, ...regionStateIds]);
-    await insertMany('buyer_preference_seller', 'seller_id', sellerIds);
-    await insertMany('buyer_preference_state', 'state_id', [...stateIds, ...regionStateIds]);
-    await insertMany('buyer_preference_subcategory', 'subcategory_id', subcategoryIds);
+    const vehicletypeOps = await togglePreference('buyer_preference_vehicletype', 'vehicletype_id', vehicleTypeIds);
+    const makeOps = await togglePreference('buyer_preference_make', 'make_id', makeIds);
+    const sellerOps = await togglePreference('buyer_preference_seller', 'seller_id', sellerIds);
+    const stateOps = await togglePreference('buyer_preference_state', 'state_id', stateIds);
+    const subcategoryOps = await togglePreference('buyer_preference_subcategory', 'subcategory_id', subcategoryIds);
 
     await connection.commit();
     return {
-      vehicletype: vehicleTypeIds.length,
-      make: makeIds.length,
-      regstate: regStateIds.length + regionStateIds.length,
-      seller: sellerIds.length,
-      state: stateIds.length + regionStateIds.length,
-      subcategory: subcategoryIds.length,
+      vehicletype: vehicletypeOps,
+      make: makeOps,
+      seller: sellerOps,
+      state: stateOps,
+      subcategory: subcategoryOps,
     };
   } catch (e) {
     await connection.rollback();

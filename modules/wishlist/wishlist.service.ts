@@ -12,9 +12,10 @@ export interface UpdatePreferencesInput {
   ownership: string;
   rcAvailable: string;
   sellerId: string;
-  regstate: string;
+  stateIds?: string;
   makeIds?: string;
   subcategoryIds?: string;
+  categoryId?: string;
 }
 
 export async function updatePreferences(input: UpdatePreferencesInput) {

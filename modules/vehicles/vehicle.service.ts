@@ -67,6 +67,10 @@ export async function getFuelTypes() {
 export async function getVehicleTypes() {
   return dao.getVehicleTypes();
 }
+
+export async function getVehicleSubcategories() {
+  return dao.getVehicleSubcategories();
+}
 export async function getSelectedVehicleImages(id: number) {
   console.log('check id', id)
   return dao.getSelectedVehicleImages(id);

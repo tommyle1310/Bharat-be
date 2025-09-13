@@ -22,9 +22,10 @@ export async function updatePreferences(req: Request, res: Response) {
   const ownership = String((req.query.ownership || '') as string);
   const rcAvailable = String((req.query.rc_available || '') as string);
   const sellerId = String((req.query.sellerId || req.query.seller_id || '') as string);
-  const regstate = String((req.query.regstate || '') as string);
+  const stateIds = String((req.query.stateIds || req.query.state || '') as string);
   const makeIds = String((req.query.makeIds || req.query.make || '') as string);
   const subcategoryIds = String((req.query.subcategoryIds || req.query.subcategory || '') as string);
+  const categoryId = String((req.query.categoryId || '') as string);
 
   try {
     const result = await service.updatePreferences({
@@ -35,9 +36,10 @@ export async function updatePreferences(req: Request, res: Response) {
       ownership,
       rcAvailable,
       sellerId,
-      regstate,
+      stateIds,
       makeIds,
       subcategoryIds,
+      categoryId,
     });
     res.json({ success: true, updated: result });
   } catch (err) {
