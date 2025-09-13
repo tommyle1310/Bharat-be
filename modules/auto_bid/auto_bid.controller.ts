@@ -15,7 +15,7 @@ export async function setAutoBid(req: Request, res: Response) {
     const accessCheck = await checkBuyerAccess(buyerId, vehicleId);
     if (!accessCheck.hasAccess) {
       const accessTypes = accessCheck.missingAccess.join(', ');
-      return sendForbidden(res, `You don't have access to place bid on ${accessTypes}`);
+      return sendForbidden(res, `You don't have access to set auto-bid on this vehicle`);
     }
   } catch (accessError) {
     return sendForbidden(res, (accessError as Error).message);
@@ -32,8 +32,20 @@ export async function setAutoBid(req: Request, res: Response) {
 
   const vehicle = await vehicleDao.getVehicleById(vehicleId);
   if (!vehicle) return sendNotFound(res, 'Vehicle not found');
+  
+  // Validate start amount against vehicle base price
   if (vehicle.base_price != null && startAmt < Number(vehicle.base_price)) {
     return sendBusinessError(res, 'Start amount did not reach base price');
+  }
+  
+  // Validate max bid against vehicle max price
+  if (vehicle.max_price != null && maxBid > Number(vehicle.max_price)) {
+    return sendBusinessError(res, 'Max bid amount exceeds vehicle maximum price');
+  }
+  
+  // Validate step amount - must be at least 1000
+  if (stepAmt < 1000) {
+    return sendBusinessError(res, 'Step amount must be at least 1000');
   }
 
   await dao.upsertAutoBid({
@@ -143,6 +155,27 @@ export async function updateAutoBid(req: Request, res: Response) {
       const startAmt = updateData.bid_start_amt ?? existingAutoBid.bid_start_amt;
       const maxBidAmt = updateData.max_bid_amt ?? existingAutoBid.max_bid_amt;
       const stepAmt = updateData.step_amt ?? existingAutoBid.step_amt;
+
+      // Get vehicle details for validation
+      const vehicle = await vehicleDao.getVehicleById(vehicleId);
+      if (!vehicle) {
+        return sendNotFound(res, 'Vehicle not found');
+      }
+
+      // Validate start amount against vehicle base price
+      if (vehicle.base_price != null && startAmt < Number(vehicle.base_price)) {
+        return sendBusinessError(res, 'Start amount did not reach base price');
+      }
+      
+      // Validate max bid against vehicle max price
+      if (vehicle.max_price != null && maxBidAmt > Number(vehicle.max_price)) {
+        return sendBusinessError(res, 'Max bid amount exceeds vehicle maximum price');
+      }
+      
+      // Validate step amount - must be at least 1000
+      if (stepAmt < 1000) {
+        return sendBusinessError(res, 'Step amount must be at least 1000');
+      }
 
       // Enforce minimum bid difference
       if (maxBidAmt - startAmt < 1000) {

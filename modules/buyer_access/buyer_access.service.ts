@@ -5,7 +5,7 @@ export async function validateBuyerAccess(buyerId: number, vehicleId: number) {
   
   if (!accessCheck.hasAccess) {
     const accessTypes = accessCheck.missingAccess.join(', ');
-    throw new Error(`You don't have access to place bid on ${accessTypes}`);
+    throw new Error(`You don't have access to place bid on this vehicle`);
   }
   
   return accessCheck;

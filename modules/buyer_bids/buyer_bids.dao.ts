@@ -137,7 +137,7 @@ export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
   const accessCheck = await checkBuyerAccess(bid.buyer_id, bid.vehicle_id);
   if (!accessCheck.hasAccess) {
     const accessTypes = accessCheck.missingAccess.join(', ');
-    throw new Error(`You don't have access to place bid on ${accessTypes}`);
+    throw new Error(`You don't have access to place bid on this vehicle`);
   }
 
   // Check max price limit

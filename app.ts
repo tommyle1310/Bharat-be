@@ -23,6 +23,7 @@ import watchlistRoutes from './modules/watchlist/watchlist.routes';
 import autoBidRoutes from './modules/auto_bid/auto_bid.routes';
 import wishlistRoutes from './modules/wishlist/wishlist.routes';
 import buyerAccessRoutes from './modules/buyer_access/buyer_access.routes';
+import sellerRoutes from './modules/seller/seller.routes';
 import { API_PREFIX } from './types/app';
 
 export function createApp(): Application {
@@ -63,6 +64,7 @@ export function createApp(): Application {
 
   // API routes
   app.use(`/${API_PREFIX}/vehicles`, vehicleRoutes);
+  app.use(`/${API_PREFIX}/sellers`, sellerRoutes);
   app.use(`/${API_PREFIX}/vehicle-makes`, makeRoutes);
   app.use(`/${API_PREFIX}/vehicle-models`, modelRoutes);
   app.use(`/${API_PREFIX}/vehicle-variants`, variantRoutes);

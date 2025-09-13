@@ -68,10 +68,14 @@ switch (response.code) {
 - **Code 7**: Bid too high, bid too low, insufficient bid difference
 
 ### Auto Bid Operations
-- **Code 2**: Auto bid not found
+- **Code 2**: Auto bid not found, Vehicle not found
 - **Code 3**: Buyer authentication required
 - **Code 6**: Invalid parameters (start_amount, max_bid, step_amount)
-- **Code 7**: Bid difference must be at least 1000
+- **Code 7**: 
+  - Bid difference must be at least 1000
+  - Start amount did not reach base price
+  - Max bid amount exceeds vehicle maximum price
+  - Step amount must be at least 1000
 
 ### Watchlist/Wishlist Operations
 - **Code 6**: Invalid buyer or vehicle ID

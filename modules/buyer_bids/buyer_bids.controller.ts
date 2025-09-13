@@ -40,7 +40,7 @@ export async function manualBid(req: Request, res: Response) {
     const accessCheck = await checkBuyerAccess(buyerId, vehicleId);
     if (!accessCheck.hasAccess) {
       const accessTypes = accessCheck.missingAccess.join(', ');
-      return sendForbidden(res, `You don't have access to place bid on ${accessTypes}`);
+      return sendForbidden(res, `You don't have access to place bid on this vehicle`);
     }
   } catch (accessError) {
     return sendForbidden(res, (accessError as Error).message);
