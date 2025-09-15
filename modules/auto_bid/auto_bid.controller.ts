@@ -215,7 +215,7 @@ export async function updateAutoBid(req: Request, res: Response) {
       try {
         const limitInfo = await getBuyerLimitInfo(buyerId);
         if (maxBidAmt > limitInfo.pending_limit) {
-          return sendBusinessError(res, `Max bid amount exceeds your pending limit of ${limitInfo.pending_limit}`);
+          return sendBusinessError(res, `Max bid amount exceeds your pending limit`);
         }
       } catch (limitError) {
         console.error('[updateAutoBid] Error checking buyer limits:', limitError);
