@@ -59,3 +59,12 @@ VALUES(0, 0, 0, 0, '');
 INSERT INTO prod_indus_db.buyer_access_vehicletype
 (id, buyer_id, vehicletype_id, category_id, updated_dttm)
 VALUES(0, 0, 0, 0, '');
+
+
+INSERT INTO prod_indus_db.buyers
+(id, name, company_name, case_option_id, email, mobile, alternate_mobile, password, address, city, state_id, pincode, information_for_buyer, team_remarks, pan_number, aadhaar_number, security_deposit, expiry_date, renew_date, buyer_status, buyer_zone, interested_states, aadhaar_front, aadhaar_back, pan_image, police_verification, verify_status, is_dummy, firebase_token, notification_opened, added_on, reset_token, police_verification_status, pan_verification_status, aadhaar_verification_status, is_logged_in, category_id, gst_no, aadhar_front_doc_id, aadhar_back_doc_id, pan_doc_id, pcc_doc_id, gst_certificate_doc_id, other_doc_id, city_id, salt, business_vertical)
+VALUES(0, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 0, '', '', '', '', '', '', 0, 0, '', 0, '', '', 0, 0, 0, 0, 0, '', 0, 0, 0, 0, 0, 0, 0, '', '');
+
+INSERT INTO prod_indus_db.auction_status
+(auction_status_id, auction_status)
+VALUES(0, '');

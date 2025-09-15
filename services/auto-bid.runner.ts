@@ -2,7 +2,7 @@ import { Pool } from "mysql2/promise";
 import { getDb } from "../config/database";
 import { listActiveAutoBids } from "../modules/auto_bid/auto_bid.dao";
 import { getVehicleById } from "../modules/vehicles/vehicle.dao";
-import { getTopBidForVehicle, insertBuyerBid, updateOtherBuyerBidsTopBidStatus, getLatestBuyerBidForVehicle } from "../modules/buyer_bids/buyer_bids.dao";
+import { getTopBidForVehicle, insertBuyerBid, updateOtherBuyerBidsTopBidStatus, getLatestBuyerBidForVehicle, getBuyerLimitInfo } from "../modules/buyer_bids/buyer_bids.dao";
 import { getRedis } from "../config/redis";
 import { getIO } from "../config/socket";
 
@@ -73,46 +73,57 @@ export function startAutoBidRunner() {
             } else if (initialBidAmt > vehicleMaxAllowed) {
               console.log(`[AUTO-BID-RUNNER][INIT] Skip initial insert: initialBidAmt(${initialBidAmt}) > vehicle max allowed (${vehicleMaxAllowed})`);
             } else {
-              const willBeTopBid = initialBidAmt > topAmt || (initialBidAmt === topAmt && topBidderId !== buyerId);
-              const topBidAtInsert = willBeTopBid ? 1 : 0;
-
-            await insertBuyerBid({
-              vehicle_id: vehicleId,
-              buyer_id: buyerId,
-              bid_amt: initialBidAmt,
-              is_surrogate: 1,
-              bid_mode: 'A',
-              top_bid_at_insert: topBidAtInsert,
-              user_id: 0,
-            });
-            totalBidsPlaced++;
-            console.log(`[AUTO-BID-RUNNER][INIT] ✅ Inserted initial auto-bid ${initialBidAmt} for buyer ${buyerId} on vehicle ${vehicleId} (top at insert: ${topBidAtInsert})`);
-
-            // Update vehicle bidders_count and top_bidder_id
-            try {
-              const { updateVehicleBidderInfo } = await import('../modules/vehicles/vehicle.dao');
-              const currentTopBidAfterBid = await getTopBidForVehicle(vehicleId);
-              const topBidderId = currentTopBidAfterBid ? currentTopBidAfterBid.buyer_id : null;
-              await updateVehicleBidderInfo(vehicleId, topBidderId);
-              console.log(`[AUTO-BID-RUNNER][INIT] ✅ Updated vehicle bidder info`);
-            } catch (updateError) {
-              console.error(`[AUTO-BID-RUNNER][INIT] ❌ Failed to update vehicle bidder info:`, updateError);
-            }
-
-            if (willBeTopBid) {
+              // Check if initial bid amount exceeds buyer's pending limit
+              // This ensures buyers don't exceed their available bidding limit
               try {
-                await updateOtherBuyerBidsTopBidStatus(vehicleId, buyerId);
-                console.log(`[AUTO-BID-RUNNER][INIT] ✅ Updated other buyer bids to set top_bid_at_insert = 0`);
-              } catch (updateError) {
-                console.error(`[AUTO-BID-RUNNER][INIT] ❌ Failed to update other buyer bids:`, updateError);
+                const limitInfo = await getBuyerLimitInfo(buyerId);
+                if (initialBidAmt > limitInfo.pending_limit) {
+                  console.log(`[AUTO-BID-RUNNER][INIT] Skip initial insert: initialBidAmt(${initialBidAmt}) > pending_limit(${limitInfo.pending_limit})`);
+                } else {
+                  const willBeTopBid = initialBidAmt > topAmt || (initialBidAmt === topAmt && topBidderId !== buyerId);
+                  const topBidAtInsert = willBeTopBid ? 1 : 0;
+
+                  await insertBuyerBid({
+                    vehicle_id: vehicleId,
+                    buyer_id: buyerId,
+                    bid_amt: initialBidAmt,
+                    is_surrogate: 1,
+                    bid_mode: 'A',
+                    top_bid_at_insert: topBidAtInsert,
+                    user_id: 0,
+                  });
+                  totalBidsPlaced++;
+                  console.log(`[AUTO-BID-RUNNER][INIT] ✅ Inserted initial auto-bid ${initialBidAmt} for buyer ${buyerId} on vehicle ${vehicleId} (top at insert: ${topBidAtInsert})`);
+
+                  // Update vehicle bidders_count and top_bidder_id
+                  try {
+                    const { updateVehicleBidderInfo } = await import('../modules/vehicles/vehicle.dao');
+                    const currentTopBidAfterBid = await getTopBidForVehicle(vehicleId);
+                    const topBidderId = currentTopBidAfterBid ? currentTopBidAfterBid.buyer_id : null;
+                    await updateVehicleBidderInfo(vehicleId, topBidderId);
+                    console.log(`[AUTO-BID-RUNNER][INIT] ✅ Updated vehicle bidder info`);
+                  } catch (updateError) {
+                    console.error(`[AUTO-BID-RUNNER][INIT] ❌ Failed to update vehicle bidder info:`, updateError);
+                  }
+
+                  if (willBeTopBid) {
+                    try {
+                      await updateOtherBuyerBidsTopBidStatus(vehicleId, buyerId);
+                      console.log(`[AUTO-BID-RUNNER][INIT] ✅ Updated other buyer bids to set top_bid_at_insert = 0`);
+                    } catch (updateError) {
+                      console.error(`[AUTO-BID-RUNNER][INIT] ❌ Failed to update other buyer bids:`, updateError);
+                    }
+                  }
+
+                  lastBidAmt = initialBidAmt;
+
+                  const refreshedTop = await getTopBidForVehicle(vehicleId);
+                  topAmt = refreshedTop ? refreshedTop.amount : Number(vehicle.base_price ?? 0);
+                  topBidderId = refreshedTop ? refreshedTop.buyer_id : null;
+                }
+              } catch (limitError) {
+                console.error(`[AUTO-BID-RUNNER][INIT] Error checking buyer limits for buyer ${buyerId}:`, limitError);
               }
-            }
-
-              lastBidAmt = initialBidAmt;
-
-              const refreshedTop = await getTopBidForVehicle(vehicleId);
-              topAmt = refreshedTop ? refreshedTop.amount : Number(vehicle.base_price ?? 0);
-              topBidderId = refreshedTop ? refreshedTop.buyer_id : null;
             }
           }
         } catch (initErr) {
@@ -134,6 +145,19 @@ export function startAutoBidRunner() {
           // Respect budget and vehicle limits
           if (nextBidAmt > maxBidAmt) break;
           if (nextBidAmt > maxAllowed) break;
+
+          // Check if next bid amount exceeds buyer's pending limit
+          // This ensures buyers don't exceed their available bidding limit
+          try {
+            const limitInfo = await getBuyerLimitInfo(buyerId);
+            if (nextBidAmt > limitInfo.pending_limit) {
+              console.log(`[AUTO-BID-RUNNER] Skip bid: nextBidAmt(${nextBidAmt}) > pending_limit(${limitInfo.pending_limit})`);
+              break;
+            }
+          } catch (limitError) {
+            console.error(`[AUTO-BID-RUNNER] Error checking buyer limits for buyer ${buyerId}:`, limitError);
+            break;
+          }
 
           processed = true;
           pendingSteps -= 1;

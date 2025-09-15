@@ -7,8 +7,10 @@ export async function list(req: Request, res: Response) {
   const limit = Number(req.query.limit ?? 50);
   const offset = Number(req.query.offset ?? 0);
   const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
+  const keyword = req.query.keyword as string;
   if (!buyerId) return sendValidationError(res, 'Invalid buyer');
-  const items = await service.list(buyerId, businessVertical, limit, offset);
+  // Call service with keyword parameter for search functionality
+  const items = await service.list(buyerId, businessVertical, limit, offset, keyword);
   return sendSuccess(res, 'Wishlist retrieved successfully', items);
 }
 
@@ -44,6 +46,7 @@ export async function updatePreferences(req: Request, res: Response) {
     });
     return sendSuccess(res, 'Wishlist preferences updated successfully', { success: true, updated: result });
   } catch (err) {
+    console.error('Wishlist update error:', err);
     return sendInternalError(res, 'Failed to update wishlist preferences');
   }
 }

@@ -82,9 +82,39 @@ export interface WatchlistItem {
   manager_id: string | null;
 }
 
-export async function getWatchlist(userId: number, limit = 50, offset = 0): Promise<WatchlistItem[]> {
+/**
+ * Get watchlist items with optional keyword search
+ * @param userId - Buyer ID
+ * @param limit - Maximum number of items to return
+ * @param offset - Number of items to skip
+ * @param keyword - Optional search keyword to filter by vehicle details
+ * @returns Array of watchlist items matching the search criteria
+ */
+export async function getWatchlist(
+  userId: number, 
+  limit = 50, 
+  offset = 0, 
+  keyword?: string
+): Promise<WatchlistItem[]> {
   const db: Pool = getDb();
   const MANAGER_IMG = DEFAULT_IMAGES.MANAGER;
+
+  // Sanitize keyword input
+  const safeKeyword = keyword ? `%${String(keyword).trim()}%` : null;
+  const hasKeyword = keyword && keyword.trim().length > 0;
+
+  // Build search condition
+  const searchCondition = hasKeyword ? `
+    AND (
+      v.manufacturing_year LIKE ?
+      OR mk.make_name LIKE ?
+      OR md.model_name LIKE ?
+      OR vv.variant_name LIKE ?
+      OR ft.fuel_type LIKE ?
+      OR st.staff LIKE ?
+      OR st.phone LIKE ?
+    )
+  ` : '';
 
   const sql = `
     SELECT
@@ -132,11 +162,22 @@ export async function getWatchlist(userId: number, limit = 50, offset = 0): Prom
         AND bb2.buyer_id = bb1.buyer_id
       )
     ) bb ON bb.vehicle_id = v.vehicle_id
+    WHERE 1=1 ${searchCondition}
     GROUP BY v.vehicle_id
     ORDER BY v.added_on DESC
     LIMIT ? OFFSET ?`;
 
-  const [rows] = await db.query<RowDataPacket[]>(sql, [MANAGER_IMG, userId, userId, limit, offset]);
+  // Prepare parameters
+  const params = [
+    MANAGER_IMG,
+    userId,
+    userId,
+    ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
+    limit,
+    offset,
+  ];
+
+  const [rows] = await db.query<RowDataPacket[]>(sql, params);
 
   return rows.map((r) => ({
     vehicle_id: String(r.vehicle_id),

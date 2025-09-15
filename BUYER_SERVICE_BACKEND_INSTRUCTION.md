@@ -23,6 +23,10 @@
 ---
 
 ### 2) Deploy on Ubuntu (production)
+
+cd /home/ubuntu/indus/be/indus_auction_system/services/buyer-service
+
+
 Give execute permission once:
 ```bash
 chmod +x indus-deploy.sh

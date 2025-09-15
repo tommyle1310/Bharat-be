@@ -8,6 +8,7 @@ const router = Router();
 router.post('/toggle', requireBuyerAuth, ctrl.toggle);
 router.post('/:vehicleId/toggle', requireBuyerAuth, ctrl.toggle);
 router.get('/', requireBuyerAuth, ctrl.list);
+router.get('/search', requireBuyerAuth, ctrl.list);
 
 export default router;
 

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import * as dao from './auto_bid.dao';
 import * as vehicleDao from '../vehicles/vehicle.dao';
 import { checkBuyerAccess } from '../buyer_access/buyer_access.dao';
+import { getBuyerLimitInfo } from '../buyer_bids/buyer_bids.dao';
 import { sendSuccess, sendError, sendNotFound, sendForbidden, sendUnauthorized, sendInternalError, sendValidationError, sendBusinessError } from '../../utils/response';
 
 export async function setAutoBid(req: Request, res: Response) {
@@ -25,27 +26,49 @@ export async function setAutoBid(req: Request, res: Response) {
     return sendValidationError(res, 'buyer_id, vehicle_id, start_amount, max_bid, step_amount required');
   }
 
-  // Enforce minimum bid difference
-  if (maxBid - startAmt < 1000) {
-    return sendBusinessError(res, 'Bid difference must be at least 1000');
-  }
-
   const vehicle = await vehicleDao.getVehicleById(vehicleId);
   if (!vehicle) return sendNotFound(res, 'Vehicle not found');
-  
-  // Validate start amount against vehicle base price
+
+  // Comprehensive validation for auto-bid parameters
+  // 1. start_amt must not be < v.base_price
   if (vehicle.base_price != null && startAmt < Number(vehicle.base_price)) {
     return sendBusinessError(res, 'Start amount did not reach base price');
   }
-  
-  // Validate max bid against vehicle max price
-  if (vehicle.max_price != null && maxBid > Number(vehicle.max_price)) {
-    return sendBusinessError(res, 'Max bid amount exceeds vehicle maximum price');
-  }
-  
-  // Validate step amount - must be at least 1000
+
+  // 2. step_amt must be at least 1000
   if (stepAmt < 1000) {
     return sendBusinessError(res, 'Step amount must be at least 1000');
+  }
+
+  // 3. step_amt must not > max_bid_amt
+  if (stepAmt > maxBid) {
+    return sendBusinessError(res, 'Step amount cannot exceed max bid amount');
+  }
+
+  // 4. max_bid_amt and step_amt must not > v.max_price
+  if (vehicle.max_price != null) {
+    if (maxBid > Number(vehicle.max_price)) {
+      return sendBusinessError(res, 'Max bid amount exceeds vehicle maximum price');
+    }
+    if (stepAmt > Number(vehicle.max_price)) {
+      return sendBusinessError(res, 'Step amount exceeds vehicle maximum price');
+    }
+  }
+
+  // 5. max_bid_amt must not > buyer pending limit
+  try {
+    const limitInfo = await getBuyerLimitInfo(buyerId);
+    if (maxBid > limitInfo.pending_limit) {
+      return sendBusinessError(res, `Max bid amount exceeds your pending limit`);
+    }
+  } catch (limitError) {
+    console.error('[setAutoBid] Error checking buyer limits:', limitError);
+    return sendInternalError(res, 'Failed to validate buyer limits');
+  }
+
+  // Enforce minimum bid difference
+  if (maxBid - startAmt < 1000) {
+    return sendBusinessError(res, 'Bid difference must be at least 1000');
   }
 
   await dao.upsertAutoBid({
@@ -162,19 +185,41 @@ export async function updateAutoBid(req: Request, res: Response) {
         return sendNotFound(res, 'Vehicle not found');
       }
 
-      // Validate start amount against vehicle base price
+      // Comprehensive validation for auto-bid parameters
+      // 1. start_amt must not be < v.base_price
       if (vehicle.base_price != null && startAmt < Number(vehicle.base_price)) {
         return sendBusinessError(res, 'Start amount did not reach base price');
       }
-      
-      // Validate max bid against vehicle max price
-      if (vehicle.max_price != null && maxBidAmt > Number(vehicle.max_price)) {
-        return sendBusinessError(res, 'Max bid amount exceeds vehicle maximum price');
-      }
-      
-      // Validate step amount - must be at least 1000
+
+      // 2. step_amt must be at least 1000
       if (stepAmt < 1000) {
         return sendBusinessError(res, 'Step amount must be at least 1000');
+      }
+
+      // 3. step_amt must not > max_bid_amt
+      if (stepAmt > maxBidAmt) {
+        return sendBusinessError(res, 'Step amount cannot exceed max bid amount');
+      }
+
+      // 4. max_bid_amt and step_amt must not > v.max_price
+      if (vehicle.max_price != null) {
+        if (maxBidAmt > Number(vehicle.max_price)) {
+          return sendBusinessError(res, 'Max bid amount exceeds vehicle maximum price');
+        }
+        if (stepAmt > Number(vehicle.max_price)) {
+          return sendBusinessError(res, 'Step amount exceeds vehicle maximum price');
+        }
+      }
+
+      // 5. max_bid_amt must not > buyer pending limit
+      try {
+        const limitInfo = await getBuyerLimitInfo(buyerId);
+        if (maxBidAmt > limitInfo.pending_limit) {
+          return sendBusinessError(res, `Max bid amount exceeds your pending limit of ${limitInfo.pending_limit}`);
+        }
+      } catch (limitError) {
+        console.error('[updateAutoBid] Error checking buyer limits:', limitError);
+        return sendInternalError(res, 'Failed to validate buyer limits');
       }
 
       // Enforce minimum bid difference

@@ -31,12 +31,23 @@ export interface WishlistItem {
   manager_id: string | null;
 }
 
+/**
+ * Get wishlist items with optional keyword search
+ * @param buyerId - Buyer ID
+ * @param businessVertical - Business vertical (A, B, or I)
+ * @param limit - Maximum number of items to return
+ * @param offset - Number of items to skip
+ * @param filters - Optional filters for RC availability and fuel type
+ * @param keyword - Optional search keyword to filter by vehicle details
+ * @returns Array of wishlist items matching the search criteria and preferences
+ */
 export async function getWishlist(
   buyerId: number,
   businessVertical: 'A'|'B'|'I' = 'A',
   limit = 50,
   offset = 0,
-  filters?: { rcAvailable?: string; vehicleFuel?: string }
+  filters?: { rcAvailable?: string; vehicleFuel?: string },
+  keyword?: string
 ): Promise<WishlistItem[]> {
   const db: Pool = getDb();
   const MANAGER_IMG = DEFAULT_IMAGES.MANAGER;
@@ -47,6 +58,23 @@ export async function getWishlist(
 
   const rcFilter = String(filters?.rcAvailable || '');
   const fuelFilter = String(filters?.vehicleFuel || '');
+
+  // Sanitize keyword input
+  const safeKeyword = keyword ? `%${String(keyword).trim()}%` : null;
+  const hasKeyword = keyword && keyword.trim().length > 0;
+
+  // Build search condition
+  const searchCondition = hasKeyword ? `
+    AND (
+      v.manufacturing_year LIKE ?
+      OR mk.make_name LIKE ?
+      OR md.model_name LIKE ?
+      OR vv.variant_name LIKE ?
+      OR ft.fuel_type LIKE ?
+      OR st.staff LIKE ?
+      OR st.phone LIKE ?
+    )
+  ` : '';
 
   const sql = `
     SELECT
@@ -111,7 +139,7 @@ export async function getWishlist(
       )
     ) bb ON bb.vehicle_id = v.vehicle_id
     LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?
-    WHERE 1=1 ${categoryFilter}
+    WHERE 1=1 ${categoryFilter} ${searchCondition}
     GROUP BY v.vehicle_id
     HAVING total_flags >= 4
     ORDER BY v.added_on DESC
@@ -126,6 +154,7 @@ export async function getWishlist(
     buyerId,
     buyerId,
     buyerId,
+    ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
     limit,
     offset,
   ];
@@ -136,6 +165,9 @@ export async function getWishlist(
     console.log('categoryFilter:', categoryFilter);
     console.log('filters.rcAvailable:', rcFilter);
     console.log('filters.vehicleFuel:', fuelFilter);
+    console.log('keyword:', keyword);
+    console.log('hasKeyword:', hasKeyword);
+    console.log('searchCondition:', searchCondition);
     console.log('SQL:', sql);
     console.log('Params:', params);
 
@@ -263,14 +295,14 @@ export async function updateWishlistPreferences(input: UpdatePreferencesInput) {
   const db = getDb();
   
   // Use specific categoryId if provided, otherwise derive from businessVertical
-  let categoryId: number;
+  let categoryIds: number[];
   if (input.categoryId && input.categoryId.trim()) {
-    categoryId = Number(input.categoryId);
-    if (isNaN(categoryId)) {
+    categoryIds = parseCsvIds(input.categoryId);
+    if (categoryIds.length === 0) {
       throw new Error('Invalid categoryId provided');
     }
   } else {
-    categoryId = mapBusinessVerticalToCategoryId(input.businessVertical);
+    categoryIds = [mapBusinessVerticalToCategoryId(input.businessVertical)];
   }
 
   const vehicleTypeIds = parseCsvIds(input.vehicleType);
@@ -289,26 +321,28 @@ export async function updateWishlistPreferences(input: UpdatePreferencesInput) {
       
       let operations = 0;
       for (const id of ids) {
-        // Check if preference exists
-        const [existing] = await connection.query<RowDataPacket[]>(
-          `SELECT id FROM ${table} WHERE buyer_id = ? AND ${column} = ? AND category_id = ?`,
-          [input.buyerId, id, categoryId]
-        );
+        for (const categoryId of categoryIds) {
+          // Check if preference exists
+          const [existing] = await connection.query<RowDataPacket[]>(
+            `SELECT id FROM ${table} WHERE buyer_id = ? AND ${column} = ? AND category_id = ?`,
+            [input.buyerId, id, categoryId]
+          );
 
-        if (existing.length > 0) {
-          // Delete existing preference (toggle off)
-          await connection.query(
-            `DELETE FROM ${table} WHERE buyer_id = ? AND ${column} = ? AND category_id = ?`,
-            [input.buyerId, id, categoryId]
-          );
-          operations--;
-        } else {
-          // Insert new preference (toggle on)
-          await connection.query(
-            `INSERT INTO ${table} (id, buyer_id, ${column}, category_id, is_surrogate, updated_dttm) VALUES (0, ?, ?, ?, 0, NOW())`,
-            [input.buyerId, id, categoryId]
-          );
-          operations++;
+          if (existing.length > 0) {
+            // Delete existing preference (toggle off)
+            await connection.query(
+              `DELETE FROM ${table} WHERE buyer_id = ? AND ${column} = ? AND category_id = ?`,
+              [input.buyerId, id, categoryId]
+            );
+            operations--;
+          } else {
+            // Insert new preference (toggle on)
+            await connection.query(
+              `INSERT INTO ${table} (id, buyer_id, ${column}, category_id, is_surrogate, updated_dttm) VALUES (0, ?, ?, ?, 0, NOW())`,
+              [input.buyerId, id, categoryId]
+            );
+            operations++;
+          }
         }
       }
       return operations;

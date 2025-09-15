@@ -223,3 +223,79 @@ export async function updateOtherBuyerBidsTopBidStatus(vehicleId: number, exclud
     [vehicleId, excludeBuyerId]
   );
 }
+
+export interface BuyerLimitInfo {
+  security_deposit: number;
+  bid_limit: number;
+  active_vehicle_bids: Array<{ vehicle_id: number; max_bidded: number }>;
+  unpaid_vehicles: Array<{ vehicle_id: number; unpaid_amt: number }>;
+  limit_used: number;
+  pending_limit: number;
+}
+
+export async function getBuyerLimitInfo(buyerId: number): Promise<BuyerLimitInfo> {
+  const db: Pool = getDb();
+  
+  // Get buyer's security deposit
+  const [buyerRows] = await db.query<RowDataPacket[]>(
+    `SELECT security_deposit FROM buyers WHERE id = ?`,
+    [buyerId]
+  );
+  
+  if (buyerRows.length === 0) {
+    throw new Error('Buyer not found');
+  }
+  
+  const securityDeposit = Number(buyerRows[0]?.security_deposit) || 0;
+  const bidLimit = securityDeposit * 10; // 10x multiplier as per requirement
+  
+  // Get unpaid amount from vehicles where buyer is top bidder and auction status is pending
+  const [unpaidRows] = await db.query<RowDataPacket[]>(`
+    SELECT 
+      v.vehicle_id,
+      MAX(bb.bid_amt) as unpaid_amt
+    FROM vehicles v
+    JOIN buyer_bids bb ON v.vehicle_id = bb.vehicle_id
+    WHERE v.top_bidder_id = ?
+    AND v.auction_status_id IN (20, 30, 50, 70)
+    AND bb.buyer_id = ?
+    GROUP BY v.vehicle_id
+  `, [buyerId, buyerId]);
+  
+  const unpaidVehicles = unpaidRows.map(row => ({
+    vehicle_id: row.vehicle_id,
+    unpaid_amt: Number(row.unpaid_amt)
+  }));
+  
+  // Get current active bids (vehicles under auction)
+  const [activeBidRows] = await db.query<RowDataPacket[]>(`
+    SELECT 
+      v.vehicle_id,
+      MAX(bb.bid_amt) as max_bidded
+    FROM vehicles v
+    JOIN buyer_bids bb ON v.vehicle_id = bb.vehicle_id
+    WHERE bb.buyer_id = ?
+    AND v.auction_status_id = 10
+    GROUP BY v.vehicle_id
+  `, [buyerId]);
+  
+  const activeVehicleBids = activeBidRows.map(row => ({
+    vehicle_id: row.vehicle_id,
+    max_bidded: Number(row.max_bidded)
+  }));
+  
+  // Calculate totals
+  const unpaidAmt = unpaidVehicles.reduce((sum, vehicle) => sum + vehicle.unpaid_amt, 0);
+  const currentBidsSum = activeVehicleBids.reduce((sum, bid) => sum + bid.max_bidded, 0);
+  const limitUsed = unpaidAmt + currentBidsSum;
+  const pendingLimit = bidLimit - limitUsed;
+  
+  return {
+    security_deposit: securityDeposit,
+    bid_limit: bidLimit,
+    active_vehicle_bids: activeVehicleBids,
+    unpaid_vehicles: unpaidVehicles,
+    limit_used: limitUsed,
+    pending_limit: Math.max(0, pendingLimit) // Ensure non-negative
+  };
+}

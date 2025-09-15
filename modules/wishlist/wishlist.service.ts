@@ -1,7 +1,8 @@
 import * as dao from './wishlist.dao';
 
-export async function list(buyerId: number, businessVertical: 'A'|'B'|'I' = 'A', limit?: number, offset?: number) {
-  return dao.getWishlist(buyerId, businessVertical, limit, offset);
+// Updated function signature to include keyword parameter for search functionality
+export async function list(buyerId: number, businessVertical: 'A'|'B'|'I' = 'A', limit?: number, offset?: number, keyword?: string) {
+  return dao.getWishlist(buyerId, businessVertical, limit, offset, undefined, keyword);
 }
 
 export interface UpdatePreferencesInput {

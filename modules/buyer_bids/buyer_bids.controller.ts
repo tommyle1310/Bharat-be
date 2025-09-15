@@ -4,7 +4,7 @@ import * as vehicleDao from '../vehicles/vehicle.dao';
 import { getRedis } from '../../config/redis';
 import { getIO } from '../../config/socket';
 import { checkBuyerAccess } from '../buyer_access/buyer_access.dao';
-import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationError, sendBusinessError } from '../../utils/response';
+import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationError, sendBusinessError, sendInternalError } from '../../utils/response';
 
 export async function history(req: Request, res: Response) {
   const buyerId = Number(req.params.buyerId);
@@ -53,6 +53,17 @@ export async function manualBid(req: Request, res: Response) {
 
   if (vehicle.base_price != null && bidAmt < Number(vehicle.base_price)) {
     return sendBusinessError(res, 'Bid amount did not reach base price');
+  }
+
+  // Check if bid amount exceeds buyer's pending limit
+  try {
+    const limitInfo = await dao.getBuyerLimitInfo(buyerId);
+    if (bidAmt > limitInfo.pending_limit) {
+      return sendBusinessError(res, `Max bid amount exceeds your pending limit`);
+    }
+  } catch (limitError) {
+    console.error('[manualBid] Error checking buyer limits:', limitError);
+    return sendInternalError(res, 'Failed to validate buyer limits');
   }
 
   const lastBid = await dao.getLatestBuyerBidForVehicle(buyerId, vehicleId);
@@ -124,6 +135,38 @@ export async function manualBid(req: Request, res: Response) {
   }
 
   return sendSuccess(res, 'Bid placed successfully', { vehicleId, buyerId, bidAmt });
+}
+
+/**
+ * Get buyer's bidding limits and current usage
+ * 
+ * Calculates:
+ * - security_deposit: Buyer's security deposit amount
+ * - bid_limit: 10x the security deposit
+ * - active_vehicle_bids: Current bids on vehicles under auction (status 10)
+ * - unpaid_vehicles: Vehicles where buyer is top bidder with pending status (20,30,50,70)
+ * - limit_used: Sum of active bids + unpaid amounts
+ * - pending_limit: Remaining available limit (bid_limit - limit_used)
+ * 
+ * @param req - Express request with buyerId in params
+ * @param res - Express response
+ */
+export async function getBuyerLimits(req: Request, res: Response) {
+  const buyerId = Number(req.params.buyerId);
+  if (Number.isNaN(buyerId)) {
+    return sendValidationError(res, 'Invalid buyerId');
+  }
+
+  try {
+    const limitInfo = await dao.getBuyerLimitInfo(buyerId);
+    return sendSuccess(res, 'Buyer limits retrieved successfully', limitInfo);
+  } catch (error) {
+    console.error('[getBuyerLimits] Error:', error);
+    if (error instanceof Error && error.message === 'Buyer not found') {
+      return sendNotFound(res, 'Buyer not found');
+    }
+    return sendInternalError(res, 'Failed to retrieve buyer limits');
+  }
 }
 
 
