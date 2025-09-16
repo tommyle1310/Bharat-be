@@ -208,6 +208,11 @@ export interface VehicleListItem {
   manager_image: string | null;
   manager_id: string | null;
   has_bidded?: boolean;
+  yard_contact_person_name?: string | null;
+  yard_address?: string | null;
+  yard_address_zip?: string | null;
+  yard_city?: string | null;
+  yard_state?: string | null;
 }
 
 export async function searchVehicles(
@@ -673,6 +678,11 @@ export async function getVehicleDetails(
       st.email AS manager_email,
       st.staff_id AS manager_id,
       ? AS manager_image,
+      v.yard_contact_person_name,
+      v.yard_address,
+      v.yard_address_zip,
+      yc.city AS yard_city,
+      ys.state AS yard_state,
       ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
       ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status,
       ${buyerId ? 'CASE WHEN MAX(w.user_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS is_favorite
@@ -684,6 +694,8 @@ export async function getVehicleDetails(
     LEFT JOIN vehicle_images vmi ON vmi.vehicle_image_id = v.vehicle_image_id
     LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
     LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
+    LEFT JOIN cities yc ON yc.city_id = v.yard_city_id
+    LEFT JOIN states ys ON ys.id = v.yard_state_id
     ${buyerId ? `LEFT JOIN (
       SELECT bb1.vehicle_id, bb1.buyer_id, bb1.top_bid_at_insert
       FROM buyer_bids bb1
@@ -726,6 +738,11 @@ export async function getVehicleDetails(
     repo_date: r.repo_date ? new Date(r.repo_date).toISOString() : null,
     regs_no: r.regs_no ?? null,
     is_favorite: (r as any).is_favorite === 1,
+    yard_contact_person_name: (r as any).yard_contact_person_name ?? null,
+    yard_address: (r as any).yard_address ?? null,
+    yard_address_zip: (r as any).yard_address_zip ?? null,
+    yard_city: (r as any).yard_city ?? null,
+    yard_state: (r as any).yard_state ?? null,
     manufacture_year: r.manufacture_year ?? null,
     vehicleId: r.vehicle_id,
     imgIndex: (r as any).img_index ?? 1,

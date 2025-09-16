@@ -136,8 +136,8 @@ export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
   // Check buyer access before allowing bid
   const accessCheck = await checkBuyerAccess(bid.buyer_id, bid.vehicle_id);
   if (!accessCheck.hasAccess) {
-    const accessTypes = accessCheck.missingAccess.join(', ');
-    throw new Error(`You don't have access to place bid on this vehicle`);
+    const firstReason = accessCheck.missingAccess[0] || "You don't have access to place bid on this vehicle";
+    throw new Error(firstReason);
   }
 
   // Check max price limit
@@ -236,9 +236,9 @@ export interface BuyerLimitInfo {
 export async function getBuyerLimitInfo(buyerId: number): Promise<BuyerLimitInfo> {
   const db: Pool = getDb();
   
-  // Get buyer's security deposit
+  // Get buyer's security deposit and bid limit
   const [buyerRows] = await db.query<RowDataPacket[]>(
-    `SELECT security_deposit FROM buyers WHERE id = ?`,
+    `SELECT security_deposit, bid_limit FROM buyers WHERE id = ?`,
     [buyerId]
   );
   
@@ -247,7 +247,7 @@ export async function getBuyerLimitInfo(buyerId: number): Promise<BuyerLimitInfo
   }
   
   const securityDeposit = Number(buyerRows[0]?.security_deposit) || 0;
-  const bidLimit = securityDeposit * 10; // 10x multiplier as per requirement
+  const bidLimit = Number(buyerRows[0]?.bid_limit) || 0;
   
   // Get unpaid amount from vehicles where buyer is top bidder and auction status is pending
   const [unpaidRows] = await db.query<RowDataPacket[]>(`

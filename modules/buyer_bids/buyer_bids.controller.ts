@@ -39,8 +39,8 @@ export async function manualBid(req: Request, res: Response) {
   try {
     const accessCheck = await checkBuyerAccess(buyerId, vehicleId);
     if (!accessCheck.hasAccess) {
-      const accessTypes = accessCheck.missingAccess.join(', ');
-      return sendForbidden(res, `You don't have access to place bid on this vehicle`);
+      const firstReason = accessCheck.missingAccess[0] || "You don't have access to place bid on this vehicle";
+      return sendForbidden(res, firstReason);
     }
   } catch (accessError) {
     return sendForbidden(res, (accessError as Error).message);
@@ -142,7 +142,7 @@ export async function manualBid(req: Request, res: Response) {
  * 
  * Calculates:
  * - security_deposit: Buyer's security deposit amount
- * - bid_limit: 10x the security deposit
+ * - bid_limit: 
  * - active_vehicle_bids: Current bids on vehicles under auction (status 10)
  * - unpaid_vehicles: Vehicles where buyer is top bidder with pending status (20,30,50,70)
  * - limit_used: Sum of active bids + unpaid amounts
