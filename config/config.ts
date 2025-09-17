@@ -82,7 +82,11 @@ export const config = {
   host: process.env.HOST || '0.0.0.0',
   port: Number(process.env.PORT || 1310),
 
-  corsOrigin: (process.env.CORS_ORIGIN || '*').split(',').map(s => s.trim()),
+  // CORS: explicitly allowlist origins (wildcard is invalid with credentials)
+  corsOrigin: (process.env.CORS_ORIGIN || 'http://localhost:3000,http://13.203.1.159:1311')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean),
 
   db: {
     host: process.env.DB_HOST || '127.0.0.1',

@@ -30,7 +30,39 @@ export function createApp(): Application {
   const app = express();
 
   app.use(helmet());
-  app.use(cors({ origin: config.corsOrigin, credentials: true }));
+  // Robust CORS: dynamic allowlist + preflight support
+  const allowAllOrigins = config.corsOrigin.includes('*');
+  const allowedOrigins = new Set([
+    ...config.corsOrigin,
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://127.0.0.1:3000',
+    'https://localhost:3000',
+  ]);
+  console.log('[CORS] Allowed origins:', allowAllOrigins ? ['<ALL>'] : Array.from(allowedOrigins));
+  const corsOptions: cors.CorsOptions = {
+    origin: (origin, callback) => {
+      if (allowAllOrigins) return callback(null, true);
+      if (!origin) return callback(null, true); // non-browser or same-origin
+      if (
+        allowedOrigins.has(origin) ||
+        origin === 'http://localhost:3000' ||
+        origin === 'http://13.203.1.159:1311'
+      ) {
+        return callback(null, true);
+      }
+      // Don't error the request; just omit CORS headers
+      console.warn(`[CORS] Blocked origin: ${origin}`);
+      return callback(null, false);
+    },
+    credentials: true,
+    methods: ['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS'],
+    allowedHeaders: ['Content-Type','Authorization','X-Requested-With','Accept'],
+    optionsSuccessStatus: 200,
+  };
+  app.use(cors(corsOptions));
+  // Use regex for Express v5 router compatibility (avoid literal '*')
+  app.options(/.*/, cors(corsOptions));
   app.use(morgan('dev'));
   app.use(compression());
   app.use(cookieParser());

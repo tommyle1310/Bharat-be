@@ -2,6 +2,7 @@ import { Server as HTTPServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { getRedis } from './redis';
+import { config } from './config';
 
 let io: SocketIOServer | null = null;
 
@@ -10,7 +11,7 @@ export function initSocket(server: HTTPServer): SocketIOServer {
 
   io = new SocketIOServer(server, {
     cors: {
-      origin: '*',
+      origin: config.corsOrigin,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
       credentials: true,
     },
