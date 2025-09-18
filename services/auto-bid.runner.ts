@@ -70,30 +70,48 @@ export function startAutoBidRunner() {
           return `${ist.getUTCFullYear()}-${pad(ist.getUTCMonth() + 1)}-${pad(ist.getUTCDate())} ${pad(ist.getUTCHours())}:${pad(ist.getUTCMinutes())}:${pad(ist.getUTCSeconds())}`;
         };
 
-        const nowUtc = new Date();
-        const auctionEndUtc = parseIst((vehicle as any).auction_end_dttm);
-        const finalExpiryUtc = parseIst((vehicle as any).final_expiry_dttm);
-        if (auctionEndUtc && nowUtc >= auctionEndUtc) {
-          console.log(`[AUTO-BID-RUNNER] Time is up for vehicle ${vehicleId}, skipping auto-bid.`);
-          continue;
-        }
-        if (auctionEndUtc && finalExpiryUtc) {
-          const msRemaining = auctionEndUtc.getTime() - nowUtc.getTime();
-          if (msRemaining > 0 && msRemaining <= 5 * 60 * 1000) {
-            const desiredUtc = new Date(Math.min(finalExpiryUtc.getTime(), nowUtc.getTime() + 5 * 60 * 1000));
-            if (desiredUtc.getTime() > auctionEndUtc.getTime()) {
-              const desiredIst = formatIst(desiredUtc);
-              try {
-                const db = getDb();
-                await db.query(`UPDATE vehicles SET auction_end_dttm = ? WHERE vehicle_id = ?`, [desiredIst, vehicleId]);
-                const io = getIO();
-                io.emit('vehicle:endtime:update', { vehicleId, auctionEndDttm: desiredIst });
-                (vehicle as any).auction_end_dttm = desiredIst;
-              } catch (e) {
-                console.error('[AUTO-BID-RUNNER] Failed to extend auction_end_dttm', e);
-              }
-            }
+        // All timestamps in DB are IST; rely on DB for time comparisons and updates
+        let payloadAuctionEnd: string | null | undefined = undefined;
+        try {
+          const db = getDb();
+          // 1) If time is up, skip auto-bid
+          const [timeRows] = await db.query<any[]>(
+            `SELECT auction_end_dttm, final_expiry_dttm, (auction_end_dttm <= NOW()) AS ended,
+                    TIMESTAMPDIFF(SECOND, NOW(), auction_end_dttm) AS secs_to_end
+             FROM vehicles WHERE vehicle_id = ?`,
+            [vehicleId]
+          );
+          const ended = Boolean(timeRows?.[0]?.ended);
+          const secsToEnd = Number(timeRows?.[0]?.secs_to_end ?? null);
+          console.log('[AUTO-BID-RUNNER][TIME][DB] vehicle_id=', vehicleId, 'auction_end_dttm=', timeRows?.[0]?.auction_end_dttm, 'final_expiry_dttm=', timeRows?.[0]?.final_expiry_dttm, 'ended=', ended, 'secs_to_end=', secsToEnd);
+          if (ended) {
+            console.log(`[AUTO-BID-RUNNER] Time is up for vehicle ${vehicleId}, skipping auto-bid.`);
+            continue;
           }
+          // 2) If in last 5 minutes, extend by min(delta, 5m)
+          const [upd] = await db.query<any>(
+            `UPDATE vehicles
+             SET auction_end_dttm = CASE
+               WHEN TIMESTAMPDIFF(SECOND, NOW(), auction_end_dttm) > 0
+                AND TIMESTAMPDIFF(SECOND, NOW(), auction_end_dttm) <= 300
+               THEN DATE_ADD(auction_end_dttm, INTERVAL LEAST(GREATEST(TIMESTAMPDIFF(SECOND, auction_end_dttm, final_expiry_dttm), 0), 300) SECOND)
+               ELSE auction_end_dttm
+             END
+             WHERE vehicle_id = ?`,
+            [vehicleId]
+          );
+          console.log('[AUTO-BID-RUNNER][EXTEND][DB] UPDATE vehicles affectedRows=', upd?.affectedRows);
+          // 3) Re-read latest end time and emit regardless to keep clients in sync
+          const [after] = await db.query<any[]>(`SELECT auction_end_dttm FROM vehicles WHERE vehicle_id = ?`, [vehicleId]);
+          const latestEnd = after?.[0]?.auction_end_dttm ?? (vehicle as any).auction_end_dttm;
+          const changed = String(latestEnd) !== String(timeRows?.[0]?.auction_end_dttm);
+          payloadAuctionEnd = changed ? String(latestEnd) : null;
+          (vehicle as any).auction_end_dttm = latestEnd;
+          const io = getIO();
+          io.emit('vehicle:endtime:update', { vehicleId, auctionEndDttm: latestEnd });
+          console.log('[AUTO-BID-RUNNER][EXTEND][DB] Emitted vehicle:endtime:update auctionEndDttm=', latestEnd);
+        } catch (timeErr) {
+          console.error('[AUTO-BID-RUNNER][EXTEND][DB] Error handling time/extension', timeErr);
         }
 
         const top = await getTopBidForVehicle(vehicleId);
@@ -141,7 +159,7 @@ export function startAutoBidRunner() {
                     bid_mode: 'A',
                     top_bid_at_insert: topBidAtInsert,
                     user_id: 0,
-                  });
+            }, payloadAuctionEnd);
                   totalBidsPlaced++;
                   console.log(`[AUTO-BID-RUNNER][INIT] ✅ Inserted initial auto-bid ${initialBidAmt} for buyer ${buyerId} on vehicle ${vehicleId} (top at insert: ${topBidAtInsert})`);
 
@@ -233,7 +251,7 @@ export function startAutoBidRunner() {
               bid_mode: 'A',
               top_bid_at_insert: topBidAtInsert,
               user_id: 0,
-            });
+            }, payloadAuctionEnd);
             bidsPlaced++;
             console.log(`[AUTO-BID-RUNNER] ✅ Successfully placed bid ${nextBidAmt} for buyer ${buyerId} on vehicle ${vehicleId}`);
 
@@ -278,9 +296,9 @@ export function startAutoBidRunner() {
               // Emit to winner/loser for instant feedback
               try {
                 const io = getIO();
-                io.to(String(buyerId)).emit('isWinning', { vehicleId });
+                io.to(String(buyerId)).emit('isWinning', { vehicleId, auctionEndDttm: (vehicle as any).auction_end_dttm });
                 if (topBidderId && topBidderId !== buyerId) {
-                  io.to(String(topBidderId)).emit('isLosing', { vehicleId });
+                  io.to(String(topBidderId)).emit('isLosing', { vehicleId, auctionEndDttm: (vehicle as any).auction_end_dttm });
                 }
               } catch (e) {
                 console.error('[AUTO-BID-RUNNER] Failed to emit isWinning/isLosing via Socket.IO', e);
@@ -316,6 +334,7 @@ export function startAutoBidRunner() {
                 vehicleId,
                 winnerBuyerId: newTopBidderId,
                 loserBuyerId: buyerId,
+                auctionEndDttm: (vehicle as any).auction_end_dttm,
               }));
             } else if (newTopBidderId === buyerId) {
               const redis = getRedis();
@@ -323,6 +342,7 @@ export function startAutoBidRunner() {
                 vehicleId,
                 winnerBuyerId: buyerId,
                 loserBuyerId: null,
+                auctionEndDttm: (vehicle as any).auction_end_dttm,
               }));
             }
           } catch (pubErr) {

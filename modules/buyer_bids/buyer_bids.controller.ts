@@ -75,33 +75,48 @@ export async function manualBid(req: Request, res: Response) {
   const vehicle = await vehicleDao.getVehicleById(vehicleId);
   if (!vehicle) return sendNotFound(res, 'Vehicle not found');
 
-  // Enforce auction end and handle near-end extension (<= 5 minutes) in IST
-  const nowUtc = new Date();
-  const auctionEndUtc = parseMySqlIst((vehicle as any).auction_end_dttm as any);
-  const finalExpiryUtc = parseMySqlIst((vehicle as any).final_expiry_dttm as any);
-  if (auctionEndUtc && nowUtc >= auctionEndUtc) {
-    return sendBusinessError(res, 'Time is up');
-  }
-  // If within 5 minutes before auction end, extend up to min(final_expiry, now + 5m)
-  if (auctionEndUtc && finalExpiryUtc) {
-    const msRemaining = auctionEndUtc.getTime() - nowUtc.getTime();
-    if (msRemaining > 0 && msRemaining <= 5 * 60 * 1000) {
-      const desiredUtc = new Date(Math.min(finalExpiryUtc.getTime(), nowUtc.getTime() + 5 * 60 * 1000));
-      if (desiredUtc.getTime() > auctionEndUtc.getTime()) {
-        const desiredIstStr = formatToMySqlIst(desiredUtc);
-        try {
-          const { getDb } = await import('../../config/database');
-          const db = getDb();
-          await db.query(`UPDATE vehicles SET auction_end_dttm = ? WHERE vehicle_id = ?`, [desiredIstStr, vehicleId]);
-          const io = getIO();
-          io.emit('vehicle:endtime:update', { vehicleId, auctionEndDttm: desiredIstStr });
-          // refresh local value for subsequent payloads
-          (vehicle as any).auction_end_dttm = desiredIstStr;
-        } catch (e) {
-          console.error('[manualBid] Failed to extend auction_end_dttm', e);
-        }
-      }
+  // Enforce auction end and handle near-end extension (<= 5 minutes) in DB (IST-aware)
+  let payloadAuctionEnd: string | null | undefined = undefined;
+  try {
+    const { getDb } = await import('../../config/database');
+    const db = getDb();
+    // 1) Hard stop if time is up
+    const [endCheckRows] = await db.query<any[]>(
+      `SELECT auction_end_dttm, final_expiry_dttm, (auction_end_dttm <= NOW()) AS ended
+       FROM vehicles WHERE vehicle_id = ?`,
+      [vehicleId]
+    );
+    const ended = Boolean(endCheckRows?.[0]?.ended);
+    console.log('[manualBid][TIME][DB] vehicle_id=', vehicleId, 'auction_end_dttm=', endCheckRows?.[0]?.auction_end_dttm, 'final_expiry_dttm=', endCheckRows?.[0]?.final_expiry_dttm, 'ended=', ended);
+    if (ended) {
+      return sendBusinessError(res, 'Time is up');
     }
+    // 2) If within last 5 minutes, extend by min(final-expiry delta, 5 minutes)
+    const [updateResult] = await db.query<any>(
+      `UPDATE vehicles
+       SET auction_end_dttm = CASE
+         WHEN TIMESTAMPDIFF(SECOND, NOW(), auction_end_dttm) > 0
+          AND TIMESTAMPDIFF(SECOND, NOW(), auction_end_dttm) <= 300
+         THEN DATE_ADD(auction_end_dttm, INTERVAL LEAST(GREATEST(TIMESTAMPDIFF(SECOND, auction_end_dttm, final_expiry_dttm), 0), 300) SECOND)
+         ELSE auction_end_dttm
+       END
+       WHERE vehicle_id = ?`,
+      [vehicleId]
+    );
+    console.log('[manualBid][EXTEND][DB] UPDATE vehicles affectedRows=', updateResult?.affectedRows);
+    // 3) Re-read to emit the possibly-updated value
+    const [afterRows] = await db.query<any[]>(`SELECT auction_end_dttm FROM vehicles WHERE vehicle_id = ?`, [vehicleId]);
+    const newAuctionEnd = afterRows?.[0]?.auction_end_dttm ?? (vehicle as any).auction_end_dttm;
+    (vehicle as any).auction_end_dttm = newAuctionEnd;
+    // Decide payload auctionEndDttm: if no change, explicitly null; if changed, use new value
+    const changed = String(newAuctionEnd) !== String(endCheckRows?.[0]?.auction_end_dttm);
+    payloadAuctionEnd = changed ? String(newAuctionEnd) : null;
+    // Only emit if it changed within window
+    const io = getIO();
+    io.emit('vehicle:endtime:update', { vehicleId, auctionEndDttm: newAuctionEnd });
+    console.log('[manualBid][EXTEND][DB] Emitted vehicle:endtime:update auctionEndDttm=', newAuctionEnd);
+  } catch (e) {
+    console.error('[manualBid][EXTEND][DB] Error handling extension in DB', e);
   }
 
   // Check buyer access first
@@ -165,7 +180,7 @@ export async function manualBid(req: Request, res: Response) {
     bid_mode: 'M',
     top_bid_at_insert: topBidAtInsert,
     user_id: 0,
-  });
+  }, payloadAuctionEnd);
 
   // Update vehicle table with bidders_count and top_bidder_id
   const { updateVehicleBidderInfo } = await import('../vehicles/vehicle.dao');

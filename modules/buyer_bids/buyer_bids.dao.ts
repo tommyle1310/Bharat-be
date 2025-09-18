@@ -192,7 +192,7 @@ export async function getLatestBuyerBidForVehicle(buyerId: number, vehicleId: nu
   return Number(rows[0]!.bid_amt);
 }
 
-export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
+export async function insertBuyerBid(bid: BuyerBidRecord, auctionEndDttmForPayload?: string | null): Promise<number> {
   // Check buyer access before allowing bid
   const accessCheck = await checkBuyerAccess(bid.buyer_id, bid.vehicle_id);
   if (!accessCheck.hasAccess) {
@@ -212,8 +212,26 @@ export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
       throw new Error(`You bid too high!`);
     }
   }
-  // Include auction end in payloads
-  const auctionEndDttm = (vehicleRows[0] as any)?.auction_end_dttm as any;
+  // Determine payload auctionEndDttm
+  let auctionEndDttm: string | null;
+  if (typeof auctionEndDttmForPayload !== 'undefined') {
+    auctionEndDttm = auctionEndDttmForPayload;
+    console.log('[insertBuyerBid][PAYLOAD] Using caller-provided auctionEndDttmForPayload =', auctionEndDttmForPayload);
+  } else {
+    const rawAuctionEnd = (vehicleRows[0] as any)?.auction_end_dttm as any;
+    auctionEndDttm = rawAuctionEnd ?? null;
+    try {
+      const [endCheck] = await db.query<RowDataPacket[]>(
+        `SELECT (auction_end_dttm <= NOW()) AS ended FROM vehicles WHERE vehicle_id = ?`,
+        [bid.vehicle_id]
+      );
+      const ended = Boolean(endCheck?.[0]?.ended);
+      console.log('[insertBuyerBid][TIME][DB] vehicle_id=', bid.vehicle_id, 'auction_end_dttm=', rawAuctionEnd, 'ended=', ended);
+      if (ended) auctionEndDttm = null;
+    } catch (e) {
+      console.error('[insertBuyerBid][TIME][DB] Failed to check end state', e);
+    }
+  }
   const [res] = await db.query<ResultSetHeader>(
     `INSERT INTO ${BUYER_BIDS_TABLE}
      (vehicle_id, buyer_id, bid_amt, is_surrogate, bid_mode, top_bid_at_insert, created_dttm, user_id)
