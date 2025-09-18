@@ -49,11 +49,19 @@ export function startAutoBidRunner() {
         // IST helper
         const parseIst = (ts?: any): Date | null => {
           if (!ts) return null;
-          const [d, t] = String(ts).split(' ');
+          const parts = String(ts).split(' ');
+          const d = parts[0];
+          const t = parts[1];
           if (!d || !t) return null;
-          const [y, mo, da] = d.split('-').map(Number);
-          const [hh, mi, ss] = t.split(':').map(Number);
-          const utcMs = Date.UTC(y, (mo || 1) - 1, da || 1, (hh || 0) - 5, (mi || 0) - 30, ss || 0);
+          const dSegs = d.split('-');
+          const tSegs = t.split(':');
+          const y = Number(dSegs[0] ?? 0);
+          const mo = Number(dSegs[1] ?? 1);
+          const da = Number(dSegs[2] ?? 1);
+          const hh = Number(tSegs[0] ?? 0);
+          const mi = Number(tSegs[1] ?? 0);
+          const ss = Number(tSegs[2] ?? 0);
+          const utcMs = Date.UTC(y, mo - 1, da, hh - 5, mi - 30, ss);
           return new Date(utcMs);
         };
         const formatIst = (dateUtc: Date): string => {

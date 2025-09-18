@@ -9,12 +9,20 @@ import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationErro
 function parseMySqlIst(ts?: string | null): Date | null {
   if (!ts) return null;
   // ts format: YYYY-MM-DD HH:mm:ss considered in IST
-  const [datePart, timePart] = ts.split(' ');
+  const parts = ts.split(' ');
+  const datePart = parts[0];
+  const timePart = parts[1];
   if (!datePart || !timePart) return null;
-  const [y, m, d] = datePart.split('-').map(Number);
-  const [hh, mm, ss] = timePart.split(':').map(Number);
+  const dateSegs = datePart.split('-');
+  const timeSegs = timePart.split(':');
+  const y = Number(dateSegs[0] ?? 0);
+  const m = Number(dateSegs[1] ?? 1);
+  const d = Number(dateSegs[2] ?? 1);
+  const hh = Number(timeSegs[0] ?? 0);
+  const mm = Number(timeSegs[1] ?? 0);
+  const ss = Number(timeSegs[2] ?? 0);
   // Convert IST -> UTC by subtracting 5h30m
-  const utcMs = Date.UTC(y, (m || 1) - 1, d || 1, (hh || 0) - 5, (mm || 0) - 30, ss || 0);
+  const utcMs = Date.UTC(y, m - 1, d, hh - 5, mm - 30, ss);
   return new Date(utcMs);
 }
 
