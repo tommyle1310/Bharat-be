@@ -8,18 +8,22 @@ import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationErro
 
 export async function history(req: Request, res: Response) {
   const buyerId = Number(req.params.buyerId);
+  const page = Number(req.query.page ?? 1);
+  const pageSize = Number(req.query.pageSize ?? 5);
   if (Number.isNaN(buyerId)) return sendValidationError(res, 'Invalid buyerId');
-  const rows = await dao.getBuyerBidHistory(buyerId);
+  const rows = await dao.getBuyerBidHistory(buyerId, page, pageSize);
   return sendSuccess(res, 'Bid history retrieved successfully', rows);
 }
 
 export async function historyByVehicle(req: Request, res: Response) {
   const buyerId = Number(req.params.buyerId);
   const vehicleId = Number(req.params.vehicleId);
+  const page = Number(req.query.page ?? 1);
+  const pageSize = Number(req.query.pageSize ?? 5);
   if (Number.isNaN(buyerId) || Number.isNaN(vehicleId)) {
     return sendValidationError(res, 'Invalid buyerId or vehicleId');
   }
-  const rows = await dao.getBuyerBidHistoryByVehicle(buyerId, vehicleId);
+  const rows = await dao.getBuyerBidHistoryByVehicle(buyerId, vehicleId, page, pageSize);
   return sendSuccess(res, 'Bid history by vehicle retrieved successfully', rows);
 }
 

@@ -2,6 +2,10 @@ import { Pool, RowDataPacket } from "mysql2/promise";
 import { getDb } from "../../config/database";
 import { DEFAULT_IMAGES } from "../../utils/static-files";
 
+// Pagination constants
+export const DEFAULT_PAGE_SIZE = 5;
+export const MAX_PAGE_SIZE = 100;
+
 export interface WishlistItem {
   vehicle_id: string;
   end_time: string | null;
@@ -44,12 +48,14 @@ export interface WishlistItem {
 export async function getWishlist(
   buyerId: number,
   businessVertical: 'A'|'B'|'I' = 'A',
-  limit = 50,
-  offset = 0,
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
   filters?: { rcAvailable?: string; vehicleFuel?: string },
   keyword?: string
-): Promise<WishlistItem[]> {
+): Promise<{ data: WishlistItem[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
+  const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
+  const offset = (page - 1) * safePageSize;
   const MANAGER_IMG = DEFAULT_IMAGES.MANAGER;
 
   const categoryFilter = businessVertical === 'I' ? ' AND v.vehicle_category_id = 10'
@@ -155,7 +161,7 @@ export async function getWishlist(
     buyerId,
     buyerId,
     ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
-    limit,
+    safePageSize,
     offset,
   ];
   try {
@@ -227,7 +233,7 @@ export async function getWishlist(
       console.log('Sample vehicles with preference flags:', vehiclesWithPrefs);
     }
 
-    return rows.map((r) => ({
+    const data = rows.map((r) => ({
       vehicle_id: String(r.vehicle_id),
       end_time: r.end_time ? new Date(r.end_time).toISOString() : null,
       odometer: r.odometer != null ? String(r.odometer) : null,
@@ -255,6 +261,61 @@ export async function getWishlist(
       manager_image: r.manager_image ?? MANAGER_IMG,
       manager_id: r.manager_id != null ? String(r.manager_id) : null,
     }));
+
+    // Get total count for pagination
+    const countSql = `
+      SELECT COUNT(*) as total
+      FROM (
+        SELECT v.vehicle_id
+        FROM vehicles v
+        LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
+        LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
+        LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
+        LEFT JOIN vehicle_make mk ON mk.id = v.vehicle_make_id
+        LEFT JOIN vehicle_images vmi ON vmi.vehicle_image_id = v.vehicle_image_id
+        LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
+        LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
+        LEFT JOIN buyer_preference_vehicletype bvt
+          ON bvt.vehicletype_id = v.vehicle_type_id AND bvt.buyer_id = ?
+        LEFT JOIN buyer_preference_subcategory bsc
+          ON bsc.subcategory_id = v.vehicle_subcategory_id AND bsc.buyer_id = ?
+        LEFT JOIN buyer_preference_state bst
+          ON bst.state_id = v.vehicle_state_id AND bst.buyer_id = ?
+        LEFT JOIN buyer_preference_seller bsl
+          ON bsl.seller_id = v.seller_id AND bsl.buyer_id = ?
+        LEFT JOIN buyer_preference_make bmk
+          ON bmk.make_id = v.vehicle_make_id AND bmk.buyer_id = ?
+        WHERE 1=1 ${categoryFilter} ${searchCondition}
+        GROUP BY v.vehicle_id
+        HAVING (
+          (CASE WHEN bvt.vehicletype_id IS NULL THEN 0 ELSE 1 END) +
+          (CASE WHEN bsc.subcategory_id IS NULL THEN 0 ELSE 1 END) +
+          (CASE WHEN bst.state_id IS NULL THEN 0 ELSE 1 END) +
+          (CASE WHEN bsl.seller_id IS NULL THEN 0 ELSE 1 END) +
+          (CASE WHEN bmk.make_id IS NULL THEN 0 ELSE 1 END)
+        ) >= 4
+      ) as filtered_vehicles
+    `;
+
+    const countParams = [
+      buyerId,
+      buyerId,
+      buyerId,
+      buyerId,
+      buyerId,
+      ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : [])
+    ];
+
+    const [countRows] = await db.query<RowDataPacket[]>(countSql, countParams);
+    const total = countRows[0]?.total || 0;
+
+    return {
+      data,
+      total,
+      page,
+      pageSize: safePageSize,
+      totalPages: Math.ceil(total / safePageSize)
+    };
   } catch (e) {
     console.error('getWishlist ERROR:', (e as any)?.message || e);
     throw e;

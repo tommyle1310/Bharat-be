@@ -4,6 +4,10 @@ import { getRedis } from "../../config/redis";
 import { getIO } from "../../config/socket";
 import { checkBuyerAccess } from "../buyer_access/buyer_access.dao";
 
+// Pagination constants
+export const DEFAULT_PAGE_SIZE = 5;
+export const MAX_PAGE_SIZE = 100;
+
 export interface BuyerBidRecord {
   bid_id?: number;
   vehicle_id: number;
@@ -18,8 +22,10 @@ export interface BuyerBidRecord {
 
 const BUYER_BIDS_TABLE = "buyer_bids";
 
-export async function getBuyerBidHistory(buyerId: number): Promise<any[]> {
+export async function getBuyerBidHistory(buyerId: number, page = 1, pageSize = DEFAULT_PAGE_SIZE): Promise<{ data: any[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
+  const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
+  const offset = (page - 1) * safePageSize;
   
   // Use static file serving for images
   const DEFAULT_IMG = "https://images.unsplash.com/photo-1517673132405-a56a62b18caf?w=800";
@@ -67,20 +73,48 @@ export async function getBuyerBidHistory(buyerId: number): Promise<any[]> {
       )
     ) bb ON bb.vehicle_id = v.vehicle_id
     GROUP BY v.vehicle_id
-    ORDER BY MAX(bb.created_dttm) DESC`;
+    ORDER BY MAX(bb.created_dttm) DESC
+    LIMIT ? OFFSET ?`;
+
+  // Get total count first
+  const countSql = `
+    SELECT COUNT(*) as total
+    FROM vehicles v
+    LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
+    LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
+    LEFT JOIN vehicle_make mk ON mk.id = v.vehicle_make_id
+    LEFT JOIN vehicle_images vmi ON vmi.vehicle_image_id = v.vehicle_image_id
+    LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
+    LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
+    INNER JOIN (
+      SELECT bb1.vehicle_id, bb1.buyer_id, bb1.top_bid_at_insert, bb1.bid_amt, bb1.created_dttm
+      FROM buyer_bids bb1
+      WHERE bb1.buyer_id = ?
+      AND bb1.created_dttm = (
+        SELECT MAX(bb2.created_dttm)
+        FROM buyer_bids bb2
+        WHERE bb2.vehicle_id = bb1.vehicle_id
+        AND bb2.buyer_id = bb1.buyer_id
+      )
+    ) bb ON bb.vehicle_id = v.vehicle_id
+    GROUP BY v.vehicle_id
+  `;
+
+  const [countRows] = await db.query<RowDataPacket[]>(countSql, [buyerId]);
+  const total = countRows[0]?.total || 0;
 
   console.log('=== getBuyerBidHistory DEBUG ===');
   console.log('SQL:', sql);
-  console.log('Params:', [MANAGER_IMG, buyerId]);
+  console.log('Params:', [MANAGER_IMG, buyerId, safePageSize, offset]);
   console.log('buyerId:', buyerId);
 
-  const [rows] = await db.query<RowDataPacket[]>(sql, [MANAGER_IMG, buyerId]);
+  const [rows] = await db.query<RowDataPacket[]>(sql, [MANAGER_IMG, buyerId, safePageSize, offset]);
   
   console.log('Raw rows count:', rows.length);
   console.log('Raw rows vehicle_ids:', rows.map(r => r.vehicle_id));
   console.log('=== END getBuyerBidHistory DEBUG ===');
   
-  return rows.map((r) => ({
+  const data = rows.map((r) => ({
     vehicle_id: String(r.vehicle_id),
     end_time: r.end_time ? new Date(r.end_time).toISOString() : null,
     odometer: r.odometer != null ? String(r.odometer) : null,
@@ -106,18 +140,44 @@ export async function getBuyerBidHistory(buyerId: number): Promise<any[]> {
     user_bid_amount: r.user_bid_amount != null ? String(r.user_bid_amount) : null,
     bid_created_dttm: r.bid_created_dttm ? new Date(r.bid_created_dttm).toISOString() : null,
   }));
+
+  return {
+    data,
+    total,
+    page,
+    pageSize: safePageSize,
+    totalPages: Math.ceil(total / safePageSize)
+  };
 }
 
-export async function getBuyerBidHistoryByVehicle(buyerId: number, vehicleId: number): Promise<RowDataPacket[]> {
+export async function getBuyerBidHistoryByVehicle(buyerId: number, vehicleId: number, page = 1, pageSize = DEFAULT_PAGE_SIZE): Promise<{ data: RowDataPacket[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
+  const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
+  const offset = (page - 1) * safePageSize;
+
+  // Get total count first
+  const [countRows] = await db.query<RowDataPacket[]>(
+    `SELECT COUNT(*) as total FROM ${BUYER_BIDS_TABLE} WHERE buyer_id = ? AND vehicle_id = ?`,
+    [buyerId, vehicleId]
+  );
+  const total = countRows[0]?.total || 0;
+
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT bid_id, vehicle_id, buyer_id, bid_amt, bid_mode, top_bid_at_insert, created_dttm
      FROM ${BUYER_BIDS_TABLE}
      WHERE buyer_id = ? AND vehicle_id = ?
-     ORDER BY created_dttm DESC, bid_amt DESC`,
-    [buyerId, vehicleId]
+     ORDER BY created_dttm DESC, bid_amt DESC
+     LIMIT ? OFFSET ?`,
+    [buyerId, vehicleId, safePageSize, offset]
   );
-  return rows;
+
+  return {
+    data: rows,
+    total,
+    page,
+    pageSize: safePageSize,
+    totalPages: Math.ceil(total / safePageSize)
+  };
 }
 
 export async function getLatestBuyerBidForVehicle(buyerId: number, vehicleId: number): Promise<number | null> {

@@ -3,9 +3,9 @@ import * as service from './vehicle.service';
 import { sendSuccess, sendError, sendNotFound, sendCreated, sendNoContent, sendValidationError } from '../../utils/response';
 
 export async function list(req: Request, res: Response) {
-  const limit = Number(req.query.limit ?? 50);
-  const offset = Number(req.query.offset ?? 0);
-  const data = await service.list(limit, offset);
+  const page = Number(req.query.page ?? 1);
+  const pageSize = Number(req.query.pageSize ?? 5);
+  const data = await service.list(page, pageSize);
   return sendSuccess(res, 'Vehicles retrieved successfully', data);
 }
 
@@ -54,10 +54,10 @@ export async function listByGroup(req: Request, res: Response) {
   }
   
   const title = String(req.query.title);
-  const limit = Number(req.query.limit ?? 50);
-  const offset = Number(req.query.offset ?? 0);
+  const page = Number(req.query.page ?? 1);
+  const pageSize = Number(req.query.pageSize ?? 5);
   const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
-  console.log('check', type, title, limit, offset);
+  console.log('check', type, title, page, pageSize);
   
   if (!type || !(title)) {
     return sendValidationError(res, 'type and title query params are required');
@@ -69,27 +69,27 @@ export async function listByGroup(req: Request, res: Response) {
   }
 
   const buyerId = req.buyer?.id;
-  const data = await service.listByGroup(type as 'state' | 'auction_status' | 'all', title, limit, offset, buyerId, businessVertical);
+  const data = await service.listByGroup(type as 'state' | 'auction_status' | 'all', title, page, pageSize, buyerId, businessVertical);
   return sendSuccess(res, 'Vehicles by group retrieved successfully', data);
 }
 
 export async function search(req: Request, res: Response) {
   const keyword = String(req.query.keyword);
-  const limit = Number(req.query.limit ?? 50);
-  const offset = Number(req.query.offset ?? 0);
+  const page = Number(req.query.page ?? 1);
+  const pageSize = Number(req.query.pageSize ?? 5);
   const buyerId = req.buyer?.id;
-  const data = await service.searchVehicles(keyword, limit, offset, buyerId);
+  const data = await service.searchVehicles(keyword, page, pageSize, buyerId);
   return sendSuccess(res, 'Vehicle search completed successfully', data);
 }
 export async function searchByGroup(req: Request, res: Response) {
   const keyword = String(req.query.keyword);
   const type = String(req.query.type || '').toLowerCase();
   const title = String(req.query.title);
-  const limit = Number(req.query.limit ?? 50);
-  const offset = Number(req.query.offset ?? 0);
+  const page = Number(req.query.page ?? 1);
+  const pageSize = Number(req.query.pageSize ?? 5);
   const buyerId = req.buyer?.id;
   const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
-  const data = await service.searchVehiclesByGroup(keyword, type as 'state' | 'auction_status' | 'all', title, limit, offset, buyerId, businessVertical);
+  const data = await service.searchVehiclesByGroup(keyword, type as 'state' | 'auction_status' | 'all', title, page, pageSize, buyerId, businessVertical);
   return sendSuccess(res, 'Vehicle search by group completed successfully', data);
 }
 
@@ -101,8 +101,8 @@ export async function filterByGroup(req: Request, res: Response) {
   const ownership = String(req.query.ownership || '');
   const rcAvailable = String(req.query.rc_available || '');
   const state = String(req.query.state || '');
-  const limit = Number(req.query.limit ?? 50);
-  const offset = Number(req.query.offset ?? 0);
+  const page = Number(req.query.page ?? 1);
+  const pageSize = Number(req.query.pageSize ?? 5);
   const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
   
   if (!type || !title) {
@@ -123,8 +123,8 @@ export async function filterByGroup(req: Request, res: Response) {
     ownership, 
     rcAvailable,
     state,
-    limit, 
-    offset,
+    page, 
+    pageSize,
     buyerId,
     businessVertical
   );

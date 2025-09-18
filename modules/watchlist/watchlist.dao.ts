@@ -2,6 +2,10 @@ import { Pool, RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { getDb } from "../../config/database";
 import { DEFAULT_IMAGES } from "../../utils/static-files";
 
+// Pagination constants
+export const DEFAULT_PAGE_SIZE = 5;
+export const MAX_PAGE_SIZE = 100;
+
 export async function addToWatchlist(userId: number, vehicleId: number): Promise<void> {
   const db: Pool = getDb();
   // Generate explicit id since table may not be AUTO_INCREMENT
@@ -92,11 +96,13 @@ export interface WatchlistItem {
  */
 export async function getWatchlist(
   userId: number, 
-  limit = 50, 
-  offset = 0, 
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
   keyword?: string
-): Promise<WatchlistItem[]> {
+): Promise<{ data: WatchlistItem[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
+  const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
+  const offset = (page - 1) * safePageSize;
   const MANAGER_IMG = DEFAULT_IMAGES.MANAGER;
 
   // Sanitize keyword input
@@ -167,19 +173,42 @@ export async function getWatchlist(
     ORDER BY v.added_on DESC
     LIMIT ? OFFSET ?`;
 
+  // Get total count first
+  const countSql = `
+    SELECT COUNT(*) as total
+    FROM watchlist w
+    INNER JOIN vehicles v ON v.vehicle_id = w.vehicle_id AND w.user_id = ?
+    LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
+    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
+    LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
+    LEFT JOIN vehicle_make mk ON mk.id = v.vehicle_make_id
+    LEFT JOIN vehicle_images vmi ON vmi.vehicle_image_id = v.vehicle_image_id
+    LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
+    LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
+    WHERE 1=1 ${searchCondition}
+  `;
+
+  const countParams = [
+    userId,
+    ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : [])
+  ];
+
+  const [countRows] = await db.query<RowDataPacket[]>(countSql, countParams);
+  const total = countRows[0]?.total || 0;
+
   // Prepare parameters
   const params = [
     MANAGER_IMG,
     userId,
     userId,
     ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
-    limit,
+    safePageSize,
     offset,
   ];
 
   const [rows] = await db.query<RowDataPacket[]>(sql, params);
 
-  return rows.map((r) => ({
+  const data = rows.map((r) => ({
     vehicle_id: String(r.vehicle_id),
     end_time: r.end_time ? new Date(r.end_time).toISOString() : null,
     odometer: r.odometer != null ? String(r.odometer) : null,
@@ -207,6 +236,14 @@ export async function getWatchlist(
     manager_image: r.manager_image ?? MANAGER_IMG,
     manager_id: r.manager_id != null ? String(r.manager_id) : null,
   }));
+
+  return {
+    data,
+    total,
+    page,
+    pageSize: safePageSize,
+    totalPages: Math.ceil(total / safePageSize)
+  };
 }
 
 

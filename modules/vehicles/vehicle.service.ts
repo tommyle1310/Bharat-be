@@ -2,8 +2,8 @@ import { Vehicle } from './vehicle.model';
 import * as dao from './vehicle.dao';
 import { VehicleGroupItem, VehicleListItem } from './vehicle.dao';
 
-export async function list(limit?: number, offset?: number) {
-  return dao.listVehicles(limit, offset);
+export async function list(page?: number, pageSize?: number) {
+  return dao.listVehicles(page, pageSize);
 }
 
 export async function getVehicleDetails(id: number, buyerId?: number) {
@@ -29,15 +29,15 @@ export async function groups(businessVertical: 'A'|'B'|'I' = 'A'): Promise<Vehic
   return dao.getGroups(businessVertical);
 }
 
-export async function listByGroup(type: 'state' | 'auction_status' | 'all', title: string, limit?: number, offset?: number, buyerId?: number, businessVertical: 'A' | 'B' | 'I' = 'A'): Promise<VehicleListItem[]> {
-  return dao.getVehiclesByGroup(type, title, limit, offset, buyerId, businessVertical);
+export async function listByGroup(type: 'state' | 'auction_status' | 'all', title: string, page?: number, pageSize?: number, buyerId?: number, businessVertical: 'A' | 'B' | 'I' = 'A') {
+  return dao.getVehiclesByGroup(type, title, page, pageSize, buyerId, businessVertical);
 }
 
-export async function searchVehicles(keyword: string, limit?: number, offset?: number, buyerId?: number): Promise<dao.VehicleItem[]> {
-  return dao.searchVehicles(keyword, limit, offset, buyerId);
+export async function searchVehicles(keyword: string, page?: number, pageSize?: number, buyerId?: number) {
+  return dao.searchVehicles(keyword, page, pageSize, buyerId);
 }
-export async function searchVehiclesByGroup(keyword: string, type: 'state' | 'auction_status' | 'all', title: string, limit?: number, offset?: number, buyerId?: number, businessVertical: 'A' | 'B' | 'I' = 'A'): Promise<dao.VehicleListItem[]> {
-  return dao.searchVehiclesByGroup(keyword, type, title, limit, offset, buyerId, businessVertical);
+export async function searchVehiclesByGroup(keyword: string, type: 'state' | 'auction_status' | 'all', title: string, page?: number, pageSize?: number, buyerId?: number, businessVertical: 'A' | 'B' | 'I' = 'A') {
+  return dao.searchVehiclesByGroup(keyword, type, title, page, pageSize, buyerId, businessVertical);
 }
 
 export async function filterVehiclesByGroup(
@@ -48,12 +48,12 @@ export async function filterVehiclesByGroup(
   ownership: string,
   rcAvailable: string,
   state: string,
-  limit?: number,
-  offset?: number,
+  page?: number,
+  pageSize?: number,
   buyerId?: number,
   businessVertical: 'A' | 'B' | 'I' = 'A'
-): Promise<dao.VehicleListItem[]> {
-  return dao.filterVehiclesByGroup(type, title, vehicleType, vehicleFuel, ownership, rcAvailable, state, limit, offset, buyerId, businessVertical);
+) {
+  return dao.filterVehiclesByGroup(type, title, vehicleType, vehicleFuel, ownership, rcAvailable, state, page, pageSize, buyerId, businessVertical);
 }
 
 export async function getOwnershipTypes() {

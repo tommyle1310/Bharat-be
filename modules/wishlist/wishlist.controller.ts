@@ -4,13 +4,13 @@ import { sendSuccess, sendError, sendInternalError, sendValidationError } from '
 
 export async function list(req: Request, res: Response) {
   const buyerId = req.buyer?.id;
-  const limit = Number(req.query.limit ?? 50);
-  const offset = Number(req.query.offset ?? 0);
+  const page = Number(req.query.page ?? 1);
+  const pageSize = Number(req.query.pageSize ?? 5);
   const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
   const keyword = req.query.keyword as string;
   if (!buyerId) return sendValidationError(res, 'Invalid buyer');
   // Call service with keyword parameter for search functionality
-  const items = await service.list(buyerId, businessVertical, limit, offset, keyword);
+  const items = await service.list(buyerId, businessVertical, page, pageSize, keyword);
   return sendSuccess(res, 'Wishlist retrieved successfully', items);
 }
 

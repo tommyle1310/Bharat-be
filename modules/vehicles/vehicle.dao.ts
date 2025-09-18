@@ -5,13 +5,32 @@ import { getDataFileUrl, DEFAULT_IMAGES } from "../../utils/static-files";
 
 const TABLE = "vehicles";
 
-export async function listVehicles(limit = 50, offset = 0): Promise<Vehicle[]> {
+// Pagination constants
+export const DEFAULT_PAGE_SIZE = 5;
+export const MAX_PAGE_SIZE = 100;
+
+export async function listVehicles(page = 1, pageSize = DEFAULT_PAGE_SIZE): Promise<{ data: Vehicle[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
+  const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
+  const offset = (page - 1) * safePageSize;
+  
+  // Get total count
+  const [countRows] = await db.query<RowDataPacket[]>(`SELECT COUNT(*) as total FROM ${TABLE}`);
+  const total = countRows[0]?.total || 0;
+  
+  // Get paginated data
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT * FROM ${TABLE} ORDER BY vehicle_id DESC LIMIT ? OFFSET ?`,
-    [limit, offset]
+    [safePageSize, offset]
   );
-  return rows as unknown as Vehicle[];
+  
+  return {
+    data: rows as unknown as Vehicle[],
+    total,
+    page,
+    pageSize: safePageSize,
+    totalPages: Math.ceil(total / safePageSize)
+  };
 }
 
 export async function getVehicleById(id: number): Promise<Vehicle | null> {
@@ -217,13 +236,39 @@ export interface VehicleListItem {
 
 export async function searchVehicles(
   keyword: string,
-  limit = 50,
-  offset = 0,
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
   buyerId?: number
-): Promise<VehicleItem[]> {
+): Promise<{ data: VehicleItem[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
-
+  const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
+  const offset = (page - 1) * safePageSize;
   const likeKeyword = `%${keyword}%`;
+
+  // Get total count
+  const countSql = `
+    SELECT COUNT(*) as total
+    FROM vehicles v
+    LEFT JOIN vehicle_make vm ON v.vehicle_make_id = vm.id
+    LEFT JOIN vehicle_model vmo ON v.vehicle_model_id = vmo.vehicle_model_id
+    LEFT JOIN vehicle_variant vv ON v.vehicle_variant_id = vv.vehicle_variant_id
+    LEFT JOIN fuel_types ft ON v.fuel_type_id = ft.id
+    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
+    LEFT JOIN staff s ON v.vehicle_manager_id = s.staff_id
+    WHERE 
+      v.manufacturing_year LIKE ?
+      OR vm.make_name LIKE ?
+      OR vmo.model_name LIKE ?
+      OR vv.variant_name LIKE ?
+      OR ft.fuel_type LIKE ?
+      OR s.staff LIKE ?
+      OR s.phone LIKE ?
+  `;
+  
+  const [countRows] = await db.query<RowDataPacket[]>(countSql, [
+    likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword
+  ]);
+  const total = countRows[0]?.total || 0;
 
   const [rows] = await db.query<RowDataPacket[]>(
     `
@@ -275,7 +320,7 @@ export async function searchVehicles(
       likeKeyword,
       likeKeyword,
       likeKeyword,
-      limit,
+      safePageSize,
       offset,
     ] : [
       likeKeyword,
@@ -285,29 +330,39 @@ export async function searchVehicles(
       likeKeyword,
       likeKeyword,
       likeKeyword,
-      limit,
+      safePageSize,
       offset,
     ]
   );
 
-  return rows.map((r) => ({
+  const data = rows.map((r) => ({
     ...r,
     has_bidded: (r as any).has_bidded === 1,
     rc_availability: r.rc_availability == null ? null : Boolean(r.rc_availability),
     repo_date: r.repo_date ? new Date(r.repo_date).toISOString() : null,
     is_favorite: (r as any).is_favorite === 1,
   })) as VehicleItem[];
+
+  return {
+    data,
+    total,
+    page,
+    pageSize: safePageSize,
+    totalPages: Math.ceil(total / safePageSize)
+  };
 }
 
 export async function getVehiclesByGroup(
   type: "state" | "auction_status" | "all",
   title: string,
-  limit = 50,
-  offset = 0,
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
   buyerId?: number,
   businessVertical: 'A' | 'B' | 'I' = 'A'
-): Promise<VehicleListItem[]> {
+): Promise<{ data: VehicleListItem[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
+  const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
+  const offset = (page - 1) * safePageSize;
 
   // Use static file serving for images
   const DEFAULT_IMG = DEFAULT_IMAGES.VEHICLE; // Fallback to external URL
@@ -315,8 +370,6 @@ export async function getVehiclesByGroup(
 
   // sanitize inputs
   const safeTitle = String(title || "").trim();
-  const safeLimit = Math.max(1, parseInt(String(limit), 10) || 50);
-  const safeOffset = Math.max(0, parseInt(String(offset), 10) || 0);
 
   let where = "";
   let join = "";
@@ -401,13 +454,38 @@ export async function getVehiclesByGroup(
     LIMIT ? OFFSET ?
   `;
 
+  // Get total count first
+  const countSql = `
+    SELECT COUNT(*) as total
+    FROM vehicles v
+    LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
+    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
+    LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
+    LEFT JOIN vehicle_make mk ON mk.id = v.vehicle_make_id
+    LEFT JOIN vehicle_images vmi ON vmi.vehicle_image_id = v.vehicle_image_id
+    LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
+    ${join}
+    LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
+    WHERE ${where}
+  `;
+
+  let countParams: any[];
+  if (type === "all") {
+    countParams = [];
+  } else {
+    countParams = [safeTitle];
+  }
+
+  const [countRows] = await db.query<RowDataPacket[]>(countSql, countParams);
+  const total = countRows[0]?.total || 0;
+
   let params: any[];
 
   if (type === "all") {
-    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, safeLimit, safeOffset] : [MANAGER_IMG, safeLimit, safeOffset];
+    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, safePageSize, offset] : [MANAGER_IMG, safePageSize, offset];
   } else {
     // Order must match: manager_image, bb.buyer_id, w.user_id, title, limit, offset
-    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, safeTitle, safeLimit, safeOffset] : [MANAGER_IMG, safeTitle, safeLimit, safeOffset];
+    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, safeTitle, safePageSize, offset] : [MANAGER_IMG, safeTitle, safePageSize, offset];
   }
 
   console.log('=== getVehiclesByGroup DEBUG ===');
@@ -454,19 +532,27 @@ export async function getVehiclesByGroup(
   console.log('Final result vehicle_ids:', result.map(r => r.vehicle_id));
   console.log('=== END getVehiclesByGroup DEBUG ===');
   
-  return result;
+  return {
+    data: result,
+    total,
+    page,
+    pageSize: safePageSize,
+    totalPages: Math.ceil(total / safePageSize)
+  };
 }
 
 export async function searchVehiclesByGroup(
   keyword: string,
   type: "state" | "auction_status" | "all",
   title: string,
-  limit = 50,
-  offset = 0,
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
   buyerId?: number,
   businessVertical: 'A' | 'B' | 'I' = 'A'
-): Promise<VehicleListItem[]> {
+): Promise<{ data: VehicleListItem[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
+  const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
+  const offset = (page - 1) * safePageSize;
 
   // Default image URLs
   const DEFAULT_IMG = DEFAULT_IMAGES.VEHICLE; // Fallback to external URL
@@ -475,8 +561,6 @@ export async function searchVehiclesByGroup(
   // Sanitize inputs
   const safeKeyword = `%${String(keyword || "").trim()}%`;
   const safeTitle = String(title || "").trim();
-  const safeLimit = Math.max(1, parseInt(String(limit), 10) || 50);
-  const safeOffset = Math.max(0, parseInt(String(offset), 10) || 0);
 
   // Build WHERE and JOIN clauses based on type
   let where = "";
@@ -570,6 +654,29 @@ export async function searchVehiclesByGroup(
     LIMIT ? OFFSET ?
   `;
 
+  // Get total count first
+  const countSql = `
+    SELECT COUNT(*) as total
+    FROM vehicles v
+    ${join}
+    WHERE ${where} AND ${searchCondition}
+  `;
+
+  let countParams: any[];
+  if (type === "all") {
+    countParams = [
+      ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : [])
+    ];
+  } else {
+    countParams = [
+      safeTitle,
+      ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : [])
+    ];
+  }
+
+  const [countRows] = await db.query<RowDataPacket[]>(countSql, countParams);
+  const total = countRows[0]?.total || 0;
+
   // Prepare query parameters
   let params: any[];
   if (type === "all") {
@@ -578,8 +685,8 @@ export async function searchVehiclesByGroup(
       MANAGER_IMG,
       ...(buyerId ? [buyerId, buyerId] : []),
       ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
-      safeLimit,
-      safeOffset,
+      safePageSize,
+      offset,
     ];
   } else {
     // For "state" and "auction_status" types, title parameter is needed
@@ -588,8 +695,8 @@ export async function searchVehiclesByGroup(
       ...(buyerId ? [buyerId, buyerId] : []),
       safeTitle,
       ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
-      safeLimit,
-      safeOffset,
+      safePageSize,
+      offset,
     ];
   }
 
@@ -642,7 +749,13 @@ export async function searchVehiclesByGroup(
     console.log('Final result vehicle_ids:', result.map(r => r.vehicle_id));
     console.log('=== END searchVehiclesByGroup DEBUG ===');
     
-    return result;
+    return {
+      data: result,
+      total,
+      page,
+      pageSize: safePageSize,
+      totalPages: Math.ceil(total / safePageSize)
+    };
   } catch (error: any) {
     console.error("[searchVehiclesByGroup] Error:", error.message);
     throw error;
@@ -764,19 +877,19 @@ export async function filterVehiclesByGroup(
   ownership: string,
   rcAvailable: string,
   state: string,
-  limit = 50,
-  offset = 0,
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
   buyerId?: number,
   businessVertical: 'A' | 'B' | 'I' = 'A'
-): Promise<VehicleListItem[]> {
+): Promise<{ data: VehicleListItem[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
+  const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
+  const offset = (page - 1) * safePageSize;
 
   const DEFAULT_IMG = DEFAULT_IMAGES.VEHICLE;
   const MANAGER_IMG = DEFAULT_IMAGES.MANAGER;
 
   const safeTitle = String(title || "").trim();
-  const safeLimit = Math.max(1, parseInt(String(limit), 10) || 50);
-  const safeOffset = Math.max(0, parseInt(String(offset), 10) || 0);
 
   let where = "";
   let join = `
@@ -929,11 +1042,30 @@ export async function filterVehiclesByGroup(
     LIMIT ? OFFSET ?
   `;
 
+  // Get total count first
+  const countSql = `
+    SELECT COUNT(*) as total
+    FROM vehicles v
+    ${join}
+    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
+    WHERE ${whereClause}
+  `;
+
+  let countParams: any[];
+  if (type === "all") {
+    countParams = [...filterParams];
+  } else {
+    countParams = [safeTitle, ...filterParams];
+  }
+
+  const [countRows] = await db.query<RowDataPacket[]>(countSql, countParams);
+  const total = countRows[0]?.total || 0;
+
   let params: any[];
   if (type === "all") {
-    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, ...filterParams, safeLimit, safeOffset] : [MANAGER_IMG, ...filterParams, safeLimit, safeOffset];
+    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, ...filterParams, safePageSize, offset] : [MANAGER_IMG, ...filterParams, safePageSize, offset];
   } else {
-    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, safeTitle, ...filterParams, safeLimit, safeOffset] : [MANAGER_IMG, safeTitle, ...filterParams, safeLimit, safeOffset];
+    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, safeTitle, ...filterParams, safePageSize, offset] : [MANAGER_IMG, safeTitle, ...filterParams, safePageSize, offset];
   }
 
   try {
@@ -987,7 +1119,13 @@ export async function filterVehiclesByGroup(
     console.log('Final result vehicle_ids:', result.map(r => r.vehicle_id));
     console.log('=== END filterVehiclesByGroup DEBUG ===');
     
-    return result;
+    return {
+      data: result,
+      total,
+      page,
+      pageSize: safePageSize,
+      totalPages: Math.ceil(total / safePageSize)
+    };
   } catch (error: any) {
     console.error("[filterVehiclesByGroup] Error:", error.message);
     throw error;

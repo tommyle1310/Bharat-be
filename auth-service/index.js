@@ -19,7 +19,9 @@ const logger = require('../../shared/utils/logger/logger');
 
 app.use(cors({
   // origin: '*',  // Replace with your actual frontend domain
-  origin: ['http://localhost:3000','http://13.203.1.159:3000'],  // Replace with your actual frontend domain
+  origin: ['http://localhost:3000','http://13.203.1.159:3000',
+    'http://localhost:1311','http://13.203.1.159:1311' // buyer
+  ],  // Replace with your actual frontend domain
   credentials: true 
 }));
 app.use(express.json());
