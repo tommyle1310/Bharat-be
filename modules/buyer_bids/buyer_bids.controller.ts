@@ -6,6 +6,31 @@ import { getIO } from '../../config/socket';
 import { checkBuyerAccess } from '../buyer_access/buyer_access.dao';
 import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationError, sendBusinessError, sendInternalError } from '../../utils/response';
 
+function parseMySqlIst(ts?: string | null): Date | null {
+  if (!ts) return null;
+  // ts format: YYYY-MM-DD HH:mm:ss considered in IST
+  const [datePart, timePart] = ts.split(' ');
+  if (!datePart || !timePart) return null;
+  const [y, m, d] = datePart.split('-').map(Number);
+  const [hh, mm, ss] = timePart.split(':').map(Number);
+  // Convert IST -> UTC by subtracting 5h30m
+  const utcMs = Date.UTC(y, (m || 1) - 1, d || 1, (hh || 0) - 5, (mm || 0) - 30, ss || 0);
+  return new Date(utcMs);
+}
+
+function formatToMySqlIst(dateUtc: Date): string {
+  // Convert UTC -> IST by adding 5h30m, then format as YYYY-MM-DD HH:mm:ss
+  const ist = new Date(dateUtc.getTime() + 330 * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const y = ist.getUTCFullYear();
+  const mo = pad(ist.getUTCMonth() + 1);
+  const d = pad(ist.getUTCDate());
+  const h = pad(ist.getUTCHours());
+  const mi = pad(ist.getUTCMinutes());
+  const s = pad(ist.getUTCSeconds());
+  return `${y}-${mo}-${d} ${h}:${mi}:${s}`;
+}
+
 export async function history(req: Request, res: Response) {
   const buyerId = Number(req.params.buyerId);
   const page = Number(req.query.page ?? 1);
@@ -38,6 +63,35 @@ export async function manualBid(req: Request, res: Response) {
 
   const vehicle = await vehicleDao.getVehicleById(vehicleId);
   if (!vehicle) return sendNotFound(res, 'Vehicle not found');
+
+  // Enforce auction end and handle near-end extension (<= 5 minutes) in IST
+  const nowUtc = new Date();
+  const auctionEndUtc = parseMySqlIst((vehicle as any).auction_end_dttm as any);
+  const finalExpiryUtc = parseMySqlIst((vehicle as any).final_expiry_dttm as any);
+  if (auctionEndUtc && nowUtc >= auctionEndUtc) {
+    return sendBusinessError(res, 'Time is up');
+  }
+  // If within 5 minutes before auction end, extend up to min(final_expiry, now + 5m)
+  if (auctionEndUtc && finalExpiryUtc) {
+    const msRemaining = auctionEndUtc.getTime() - nowUtc.getTime();
+    if (msRemaining > 0 && msRemaining <= 5 * 60 * 1000) {
+      const desiredUtc = new Date(Math.min(finalExpiryUtc.getTime(), nowUtc.getTime() + 5 * 60 * 1000));
+      if (desiredUtc.getTime() > auctionEndUtc.getTime()) {
+        const desiredIstStr = formatToMySqlIst(desiredUtc);
+        try {
+          const { getDb } = await import('../../config/database');
+          const db = getDb();
+          await db.query(`UPDATE vehicles SET auction_end_dttm = ? WHERE vehicle_id = ?`, [desiredIstStr, vehicleId]);
+          const io = getIO();
+          io.emit('vehicle:endtime:update', { vehicleId, auctionEndDttm: desiredIstStr });
+          // refresh local value for subsequent payloads
+          (vehicle as any).auction_end_dttm = desiredIstStr;
+        } catch (e) {
+          console.error('[manualBid] Failed to extend auction_end_dttm', e);
+        }
+      }
+    }
+  }
 
   // Check buyer access first
   try {
@@ -116,10 +170,12 @@ export async function manualBid(req: Request, res: Response) {
     // Publish winner update so server can forward via Socket.IO
     try {
       const redis = getRedis();
+      const auctionEndDttm = (vehicle as any).auction_end_dttm as any;
       const winnerPayload = {
         vehicleId: vehicleId,
         winnerBuyerId: buyerId,
         loserBuyerId: previousTopBuyerId && previousTopBuyerId !== buyerId ? previousTopBuyerId : null,
+        auctionEndDttm,
       };
       await redis.publish('vehicle:winner:update', JSON.stringify(winnerPayload));
     } catch (e) {
@@ -129,9 +185,9 @@ export async function manualBid(req: Request, res: Response) {
     // Direct emits for immediate UX (targeted rooms by buyerId)
     try {
       const io = getIO();
-      io.to(String(buyerId)).emit('isWinning', { vehicleId });
+      io.to(String(buyerId)).emit('isWinning', { vehicleId, auctionEndDttm: (vehicle as any).auction_end_dttm });
       if (previousTopBuyerId && previousTopBuyerId !== buyerId) {
-        io.to(String(previousTopBuyerId)).emit('isLosing', { vehicleId });
+        io.to(String(previousTopBuyerId)).emit('isLosing', { vehicleId, auctionEndDttm: (vehicle as any).auction_end_dttm });
       }
     } catch (e) {
       console.error('[manualBid] Failed to emit isWinning/isLosing via Socket.IO', e);

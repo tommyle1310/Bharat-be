@@ -33,14 +33,15 @@ async function initRedisSubscriber() {
       if (channel === "vehicle:endtime:update") {
         io.emit("vehicle:endtime:update", payload);
       } else if (channel === "vehicle:winner:update") {
+        // Forward winner update with auctionEndDttm if present
         io.emit("vehicle:winner:update", payload);
 
         // emit riêng cho buyer cụ thể
         if (payload?.winnerBuyerId) {
-          io.to(String(payload.winnerBuyerId)).emit("isWinning", { vehicleId: payload.vehicleId });
+          io.to(String(payload.winnerBuyerId)).emit("isWinning", { vehicleId: payload.vehicleId, auctionEndDttm: payload.auctionEndDttm });
         }
         if (payload?.loserBuyerId) {
-          io.to(String(payload.loserBuyerId)).emit("isLosing", { vehicleId: payload.vehicleId });
+          io.to(String(payload.loserBuyerId)).emit("isLosing", { vehicleId: payload.vehicleId, auctionEndDttm: payload.auctionEndDttm });
         }
       }
     } catch (e) {

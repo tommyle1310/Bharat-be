@@ -203,7 +203,7 @@ export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
   // Check max price limit
   const db: Pool = getDb();
   const [vehicleRows] = await db.query<RowDataPacket[]>(`
-    SELECT max_price FROM vehicles WHERE vehicle_id = ?
+    SELECT max_price, auction_end_dttm, final_expiry_dttm FROM vehicles WHERE vehicle_id = ?
   `, [bid.vehicle_id]);
   
   if (vehicleRows.length > 0 && vehicleRows[0]?.max_price != null) {
@@ -212,6 +212,8 @@ export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
       throw new Error(`You bid too high!`);
     }
   }
+  // Include auction end in payloads
+  const auctionEndDttm = (vehicleRows[0] as any)?.auction_end_dttm as any;
   const [res] = await db.query<ResultSetHeader>(
     `INSERT INTO ${BUYER_BIDS_TABLE}
      (vehicle_id, buyer_id, bid_amt, is_surrogate, bid_mode, top_bid_at_insert, created_dttm, user_id)
@@ -239,6 +241,7 @@ export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
       buyerId: bid.buyer_id,
       bidAmt: bid.bid_amt,
       isTopBidder: bid.top_bid_at_insert === 1,
+      auctionEndDttm,
     };
   
     await redis.publish("vehicle:bid:update", JSON.stringify(payload));
@@ -253,7 +256,7 @@ export async function insertBuyerBid(bid: BuyerBidRecord): Promise<number> {
   try {
     if (bid.top_bid_at_insert === 1) {
       const io = getIO();
-      io.to(String(bid.buyer_id)).emit('isWinning', { vehicleId: bid.vehicle_id });
+      io.to(String(bid.buyer_id)).emit('isWinning', { vehicleId: bid.vehicle_id, auctionEndDttm });
     }
   } catch (e) {
     console.error('[insertBuyerBid] Failed Socket.IO emit isWinning', e);

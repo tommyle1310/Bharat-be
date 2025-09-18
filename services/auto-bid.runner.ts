@@ -46,6 +46,48 @@ export function startAutoBidRunner() {
           continue;
         }
 
+        // IST helper
+        const parseIst = (ts?: any): Date | null => {
+          if (!ts) return null;
+          const [d, t] = String(ts).split(' ');
+          if (!d || !t) return null;
+          const [y, mo, da] = d.split('-').map(Number);
+          const [hh, mi, ss] = t.split(':').map(Number);
+          const utcMs = Date.UTC(y, (mo || 1) - 1, da || 1, (hh || 0) - 5, (mi || 0) - 30, ss || 0);
+          return new Date(utcMs);
+        };
+        const formatIst = (dateUtc: Date): string => {
+          const ist = new Date(dateUtc.getTime() + 330 * 60 * 1000);
+          const pad = (n: number) => String(n).padStart(2, '0');
+          return `${ist.getUTCFullYear()}-${pad(ist.getUTCMonth() + 1)}-${pad(ist.getUTCDate())} ${pad(ist.getUTCHours())}:${pad(ist.getUTCMinutes())}:${pad(ist.getUTCSeconds())}`;
+        };
+
+        const nowUtc = new Date();
+        const auctionEndUtc = parseIst((vehicle as any).auction_end_dttm);
+        const finalExpiryUtc = parseIst((vehicle as any).final_expiry_dttm);
+        if (auctionEndUtc && nowUtc >= auctionEndUtc) {
+          console.log(`[AUTO-BID-RUNNER] Time is up for vehicle ${vehicleId}, skipping auto-bid.`);
+          continue;
+        }
+        if (auctionEndUtc && finalExpiryUtc) {
+          const msRemaining = auctionEndUtc.getTime() - nowUtc.getTime();
+          if (msRemaining > 0 && msRemaining <= 5 * 60 * 1000) {
+            const desiredUtc = new Date(Math.min(finalExpiryUtc.getTime(), nowUtc.getTime() + 5 * 60 * 1000));
+            if (desiredUtc.getTime() > auctionEndUtc.getTime()) {
+              const desiredIst = formatIst(desiredUtc);
+              try {
+                const db = getDb();
+                await db.query(`UPDATE vehicles SET auction_end_dttm = ? WHERE vehicle_id = ?`, [desiredIst, vehicleId]);
+                const io = getIO();
+                io.emit('vehicle:endtime:update', { vehicleId, auctionEndDttm: desiredIst });
+                (vehicle as any).auction_end_dttm = desiredIst;
+              } catch (e) {
+                console.error('[AUTO-BID-RUNNER] Failed to extend auction_end_dttm', e);
+              }
+            }
+          }
+        }
+
         const top = await getTopBidForVehicle(vehicleId);
         let topAmt = top ? top.amount : Number(vehicle.base_price ?? 0);
         let topBidderId = top ? top.buyer_id : null;
@@ -83,7 +125,7 @@ export function startAutoBidRunner() {
                   const willBeTopBid = initialBidAmt > topAmt || (initialBidAmt === topAmt && topBidderId !== buyerId);
                   const topBidAtInsert = willBeTopBid ? 1 : 0;
 
-                  await insertBuyerBid({
+            await insertBuyerBid({
                     vehicle_id: vehicleId,
                     buyer_id: buyerId,
                     bid_amt: initialBidAmt,
@@ -206,6 +248,7 @@ export function startAutoBidRunner() {
                 buyerId,
                 bidAmt: nextBidAmt,
                 isTopBidder: topBidAtInsert === 1,
+                auctionEndDttm: (vehicle as any).auction_end_dttm,
               };
             
               await redis.publish("vehicle:bid:update", JSON.stringify(payload));
