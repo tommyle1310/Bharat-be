@@ -266,7 +266,12 @@ export async function getWishlist(
     const countSql = `
       SELECT COUNT(*) as total
       FROM (
-        SELECT v.vehicle_id
+        SELECT v.vehicle_id,
+          MAX(CASE WHEN bvt.buyer_id IS NULL THEN 0 ELSE 1 END) AS vt_flag,
+          MAX(CASE WHEN bsc.buyer_id IS NULL THEN 0 ELSE 1 END) AS sc_flag,
+          MAX(CASE WHEN bst.buyer_id IS NULL THEN 0 ELSE 1 END) AS st_flag,
+          MAX(CASE WHEN bsl.buyer_id IS NULL THEN 0 ELSE 1 END) AS sl_flag,
+          MAX(CASE WHEN bmk.buyer_id IS NULL THEN 0 ELSE 1 END) AS mk_flag
         FROM vehicles v
         LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
         LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
@@ -287,13 +292,7 @@ export async function getWishlist(
           ON bmk.make_id = v.vehicle_make_id AND bmk.buyer_id = ?
         WHERE 1=1 ${categoryFilter} ${searchCondition}
         GROUP BY v.vehicle_id
-        HAVING (
-          (CASE WHEN bvt.vehicletype_id IS NULL THEN 0 ELSE 1 END) +
-          (CASE WHEN bsc.subcategory_id IS NULL THEN 0 ELSE 1 END) +
-          (CASE WHEN bst.state_id IS NULL THEN 0 ELSE 1 END) +
-          (CASE WHEN bsl.seller_id IS NULL THEN 0 ELSE 1 END) +
-          (CASE WHEN bmk.make_id IS NULL THEN 0 ELSE 1 END)
-        ) >= 4
+        HAVING (vt_flag + sc_flag + st_flag + sl_flag + mk_flag) >= 4
       ) as filtered_vehicles
     `;
 

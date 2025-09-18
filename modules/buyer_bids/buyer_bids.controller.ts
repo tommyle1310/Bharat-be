@@ -6,21 +6,24 @@ import { getIO } from '../../config/socket';
 import { checkBuyerAccess } from '../buyer_access/buyer_access.dao';
 import { sendSuccess, sendError, sendNotFound, sendForbidden, sendValidationError, sendBusinessError, sendInternalError } from '../../utils/response';
 
-function parseMySqlIst(ts?: string | null): Date | null {
-  if (!ts) return null;
-  // ts format: YYYY-MM-DD HH:mm:ss considered in IST
-  const parts = ts.split(' ');
+function parseMySqlIst(ts?: unknown): Date | null {
+  if (ts == null) return null;
+  if (ts instanceof Date && !isNaN(ts.getTime())) return ts;
+  const s = String(ts);
+  if (!s) return null;
+  // expected format: YYYY-MM-DD HH:mm:ss in IST, but be defensive
+  const parts = s.split(' ');
   const datePart = parts[0];
   const timePart = parts[1];
   if (!datePart || !timePart) return null;
   const dateSegs = datePart.split('-');
   const timeSegs = timePart.split(':');
-  const y = Number(dateSegs[0] ?? 0);
-  const m = Number(dateSegs[1] ?? 1);
-  const d = Number(dateSegs[2] ?? 1);
-  const hh = Number(timeSegs[0] ?? 0);
-  const mm = Number(timeSegs[1] ?? 0);
-  const ss = Number(timeSegs[2] ?? 0);
+  const y = Number(dateSegs?.[0] ?? 0);
+  const m = Number(dateSegs?.[1] ?? 1);
+  const d = Number(dateSegs?.[2] ?? 1);
+  const hh = Number(timeSegs?.[0] ?? 0);
+  const mm = Number(timeSegs?.[1] ?? 0);
+  const ss = Number(timeSegs?.[2] ?? 0);
   // Convert IST -> UTC by subtracting 5h30m
   const utcMs = Date.UTC(y, m - 1, d, hh - 5, mm - 30, ss);
   return new Date(utcMs);
