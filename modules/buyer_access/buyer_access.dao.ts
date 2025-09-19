@@ -27,14 +27,22 @@ export async function checkBuyerAccess(
   const [vehicleRows] = await db.query<RowDataPacket[]>(
     `
     SELECT 
-      vehicle_id,
-      vehicle_type_id,
-      vehicle_category_id,
-      vehicle_subcategory_id,
-      seller_id,
-      vehicle_state_id
-    FROM vehicles 
-    WHERE vehicle_id = ?
+      v.vehicle_id,
+      v.vehicle_type_id,
+      v.vehicle_category_id,
+      v.vehicle_subcategory_id,
+      v.seller_id,
+      v.vehicle_state_id,
+      s.name AS seller_name,
+      st.state AS state_name,
+      sc.sub_category AS subcategory_name,
+      vt.vehicle_type AS vehicle_type_name
+    FROM vehicles v
+    LEFT JOIN seller s ON s.seller_id = v.seller_id
+    LEFT JOIN states st ON st.id = v.vehicle_state_id
+    LEFT JOIN vehicle_subcategory sc ON sc.sub_category_id = v.vehicle_subcategory_id
+    LEFT JOIN vehicle_types vt ON vt.id = v.vehicle_type_id
+    WHERE v.vehicle_id = ?
     `,
     [vehicleId]
   );
@@ -52,56 +60,11 @@ export async function checkBuyerAccess(
     throw new Error("Vehicle not found");
   }
 
-  // Fetch human-friendly labels for error messages
-  let sellerName: string | null = null;
-  let stateName: string | null = null;
-  let subcategoryName: string | null = null;
-  let vehicleTypeName: string | null = null;
-
-  try {
-    // states
-    const [sRows] = await db.query<RowDataPacket[]>(
-      `SELECT state FROM states WHERE id = ?`,
-      [vehicle.vehicle_state_id]
-    );
-    stateName = sRows[0]?.state ?? null;
-  } catch {}
-
-  try {
-    // vehicle_subcategory
-    const [scRows] = await db.query<RowDataPacket[]>(
-      `SELECT sub_category FROM vehicle_subcategory WHERE sub_category_id = ?`,
-      [vehicle.vehicle_subcategory_id]
-    );
-    subcategoryName = scRows[0]?.sub_category ?? null;
-  } catch {}
-
-  try {
-    // vehicle_types
-    const [vtRows] = await db.query<RowDataPacket[]>(
-      `SELECT vehicle_type FROM vehicle_types WHERE id = ?`,
-      [vehicle.vehicle_type_id]
-    );
-    vehicleTypeName = vtRows[0]?.vehicle_type ?? null;
-  } catch {}
-
-  try {
-    // sellers table (prefer plural), fallback to singular table name if needed
-    let selRows: RowDataPacket[];
-    [selRows] = await db.query<RowDataPacket[]>(
-      `SELECT name FROM sellers WHERE seller_id = ?`,
-      [vehicle.seller_id]
-    );
-    if (!selRows[0]) {
-      const [selRows2] = await db.query<RowDataPacket[]>(
-        `SELECT name FROM seller WHERE seller_id = ?`,
-        [vehicle.seller_id]
-      );
-      sellerName = selRows2[0]?.name ?? null;
-    } else {
-      sellerName = selRows[0]?.name ?? null;
-    }
-  } catch {}
+  // Extract human-friendly labels for error messages from joined row
+  const sellerName: string | null = (vehicle as any).seller_name ?? null;
+  const stateName: string | null = (vehicle as any).state_name ?? null;
+  const subcategoryName: string | null = (vehicle as any).subcategory_name ?? null;
+  const vehicleTypeName: string | null = (vehicle as any).vehicle_type_name ?? null;
 
   const missingAccess: string[] = [];
 
@@ -141,7 +104,7 @@ export async function checkBuyerAccess(
   console.debug("[checkBuyerAccess] State access result:", stateAccess);
 
   if (stateAccess.length === 0) {
-    missingAccess.push(`Not allowed to Bid for ${stateName ?? String(vehicle.vehicle_state_id)}`);
+    missingAccess.push(`Not allowed to Bid for State ${stateName ?? String(vehicle.vehicle_state_id)}`);
     console.warn("[checkBuyerAccess] Missing state access", { state_id: vehicle.vehicle_state_id });
   }
 
