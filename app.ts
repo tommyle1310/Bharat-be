@@ -1,4 +1,5 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
+import fs from 'fs';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -77,7 +78,23 @@ export function createApp(): Application {
   // External data-files directory (sibling to backend)
   // Accessible via: http://localhost:1310/data-files/filename.ext
   // This serves files from kmsg/data-files/ directory
-  app.use(config.static.dataFilesUrl, express.static(config.static.dataFilesPath));
+  app.use(config.static.dataFilesUrl, (req: Request, res: Response, next: NextFunction) => {
+    const filePath = path.join(config.static.dataFilesPath, req.path);
+  
+    if (fs.existsSync(filePath)) {
+      return res.sendFile(filePath);
+    }
+  
+    // Nếu file không tồn tại → trả fallback image
+    const fallbackPath = path.join(__dirname, '../public/no-image.jpg');
+    return res.sendFile(fallbackPath, err => {
+      if (err) {
+        console.error("Fallback image not found!", err);
+        res.status(404).json({ message: "Image not found" });
+      }
+    });
+  });
+  
 
   // Health
   app.get('/health', async (_req: Request, res: Response) => {
