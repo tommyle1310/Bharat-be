@@ -380,3 +380,59 @@ export async function getBuyerLimitInfo(buyerId: number): Promise<BuyerLimitInfo
     pending_limit: Math.max(0, pendingLimit) // Ensure non-negative
   };
 }
+
+export async function lockVehicleForUpdate(vehicleId: number): Promise<RowDataPacket | null> {
+  const db: Pool = getDb();
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT vehicle_id, max_price, base_price, top_bidder_id, auction_end_dttm
+     FROM vehicles WHERE vehicle_id = ? FOR UPDATE`,
+    [vehicleId]
+  );
+  return rows.length > 0 ? (rows[0] as RowDataPacket) : null;
+}
+
+export async function getCurrentMaxBidForVehicle(vehicleId: number): Promise<number> {
+  const db: Pool = getDb();
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT COALESCE(MAX(bid_amt), (SELECT base_price FROM vehicles WHERE vehicle_id = ?)) AS current_max
+     FROM buyer_bids WHERE vehicle_id = ?`,
+    [vehicleId, vehicleId]
+  );
+  return Number(rows[0]?.current_max) || 0;
+}
+
+export async function getBuyerCurrentMaxOnVehicle(buyerId: number, vehicleId: number): Promise<number> {
+  const db: Pool = getDb();
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT COALESCE(MAX(bid_amt), 0) AS buyer_current
+     FROM buyer_bids WHERE vehicle_id = ? AND buyer_id = ?`,
+    [vehicleId, buyerId]
+  );
+  return Number(rows[0]?.buyer_current) || 0;
+}
+
+export async function insertSurrogateBid(bid: BuyerBidRecord): Promise<number> {
+  const db: Pool = getDb();
+  const [res] = await db.query<ResultSetHeader>(
+    `INSERT INTO ${BUYER_BIDS_TABLE} (vehicle_id, buyer_id, bid_amt, is_surrogate, bid_mode, top_bid_at_insert, created_dttm, user_id)
+     VALUES (?, ?, ?, 1, 'A', 0, NOW(), 0)`,
+    [bid.vehicle_id, bid.buyer_id, bid.bid_amt]
+  );
+  return res.insertId;
+}
+
+export async function clearTopBidFlags(vehicleId: number): Promise<void> {
+  const db: Pool = getDb();
+  await db.query<ResultSetHeader>(
+    `UPDATE ${BUYER_BIDS_TABLE} SET top_bid_at_insert = 0 WHERE vehicle_id = ? AND top_bid_at_insert = 1`,
+    [vehicleId]
+  );
+}
+
+export async function setTopBidFlag(bidId: number): Promise<void> {
+  const db: Pool = getDb();
+  await db.query<ResultSetHeader>(
+    `UPDATE ${BUYER_BIDS_TABLE} SET top_bid_at_insert = 1 WHERE bid_id = ?`,
+    [bidId]
+  );
+}

@@ -56,6 +56,19 @@ export async function filterVehiclesByGroup(
   return dao.filterVehiclesByGroup(type, title, vehicleType, vehicleFuel, ownership, rcAvailable, state, page, pageSize, buyerId, businessVertical);
 }
 
+export async function filterVehiclesAll(
+  vehicleType: string,
+  vehicleFuel: string,
+  ownership: string,
+  rcAvailable: string,
+  state: string,
+  page?: number,
+  pageSize?: number,
+  buyerId?: number,
+) {
+  return dao.filterVehiclesAll(vehicleType, vehicleFuel, ownership, rcAvailable, state, page, pageSize, buyerId);
+}
+
 export async function getOwnershipTypes() {
   return dao.getOwnershipTypes();
 }

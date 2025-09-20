@@ -34,8 +34,17 @@ export async function upsertAutoBid(rec: AutoBidRecord): Promise<void> {
 export async function listActiveAutoBids(): Promise<RowDataPacket[]> {
   const db: Pool = getDb();
   const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT vehicle_id, buyer_id, bid_start_amt, step_amt, max_bid_amt, max_steps, pending_steps, last_bid_amt
-     FROM ${AUTO_BID_TABLE}`
+    `SELECT ab.vehicle_id, ab.buyer_id, ab.last_bid_amt, ab.step_amt, ab.pending_steps, ab.max_bid_amt, ab.bid_start_amt, v.max_price, v.base_price, v.auction_start_dttm, v.auction_end_dttm, v.top_bidder_id
+     FROM ${AUTO_BID_TABLE} ab
+     JOIN vehicles v ON v.vehicle_id = ab.vehicle_id
+     WHERE ab.pending_steps > 0
+       AND v.auction_start_dttm <= NOW()
+       AND v.auction_end_dttm >= NOW()
+       AND (
+         (ab.last_bid_amt IS NULL AND GREATEST(ab.bid_start_amt, v.base_price) <= ab.max_bid_amt AND GREATEST(ab.bid_start_amt, v.base_price) <= v.max_price)
+         OR
+         (ab.last_bid_amt IS NOT NULL AND (ab.last_bid_amt + ab.step_amt) <= ab.max_bid_amt AND (ab.last_bid_amt + ab.step_amt) <= v.max_price)
+       )`
   );
   return rows;
 }
@@ -127,6 +136,67 @@ export async function removeAutoBid(vehicleId: number, buyerId: number): Promise
     [vehicleId, buyerId]
   );
   return res.affectedRows > 0;
+}
+
+export async function getActiveBidsTotalForBuyer(buyerId: number): Promise<number> {
+  const db: Pool = getDb();
+  const [rows] = await db.query<RowDataPacket[]>(`
+    WITH per_vehicle AS (
+      SELECT v.vehicle_id,
+             MAX(bb.bid_amt) AS max_bidded
+      FROM vehicles v
+      JOIN buyer_bids bb ON v.vehicle_id = bb.vehicle_id
+      WHERE bb.buyer_id = ? AND v.auction_status_id = 10
+      GROUP BY v.vehicle_id
+    )
+    SELECT COALESCE(SUM(max_bidded), 0) AS active_bids_total FROM per_vehicle
+  `, [buyerId]);
+  return Number(rows[0]?.active_bids_total) || 0;
+}
+
+export async function getUnpaidTotalForBuyer(buyerId: number): Promise<number> {
+  const db: Pool = getDb();
+  const [rows] = await db.query<RowDataPacket[]>(`
+    WITH per_vehicle AS (
+      SELECT v.vehicle_id,
+             MAX(bb.bid_amt) AS unpaid_amt
+      FROM vehicles v
+      JOIN buyer_bids bb ON v.vehicle_id = bb.vehicle_id
+      WHERE v.top_bidder_id = ? AND v.auction_status_id IN (20,30,50,70) AND bb.buyer_id = ?
+      GROUP BY v.vehicle_id
+    )
+    SELECT COALESCE(SUM(unpaid_amt), 0) AS unpaid_total FROM per_vehicle
+  `, [buyerId, buyerId]);
+  return Number(rows[0]?.unpaid_total) || 0;
+}
+
+export async function lockBuyerForUpdate(buyerId: number): Promise<RowDataPacket | null> {
+  const db: Pool = getDb();
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT id, bid_limit, security_deposit FROM buyers WHERE id = ? FOR UPDATE`,
+    [buyerId]
+  );
+  return rows.length > 0 ? (rows[0] as RowDataPacket) : null;
+}
+
+export async function lockAutoBidsForBuyer(buyerId: number): Promise<RowDataPacket[]> {
+  const db: Pool = getDb();
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT ab.vehicle_id, ab.step_amt, ab.last_bid_amt, ab.pending_steps, ab.max_bid_amt, ab.bid_start_amt
+     FROM ${AUTO_BID_TABLE} ab
+     JOIN vehicles v ON v.vehicle_id = ab.vehicle_id
+     WHERE ab.buyer_id = ? AND ab.pending_steps > 0 
+       AND v.auction_start_dttm <= NOW()
+       AND v.auction_end_dttm >= NOW()
+       AND (
+         (ab.last_bid_amt IS NULL AND GREATEST(ab.bid_start_amt, v.base_price) <= ab.max_bid_amt AND GREATEST(ab.bid_start_amt, v.base_price) <= v.max_price)
+         OR
+         (ab.last_bid_amt IS NOT NULL AND (ab.last_bid_amt + ab.step_amt) <= ab.max_bid_amt AND (ab.last_bid_amt + ab.step_amt) <= v.max_price)
+       )
+     FOR UPDATE`,
+    [buyerId]
+  );
+  return rows;
 }
 
 

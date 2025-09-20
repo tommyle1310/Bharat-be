@@ -239,109 +239,135 @@ export async function searchVehicles(
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
   buyerId?: number
-): Promise<{ data: VehicleItem[], total: number, page: number, pageSize: number, totalPages: number }> {
+): Promise<{ data: VehicleListItem[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
   const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
   const offset = (page - 1) * safePageSize;
-  const likeKeyword = `%${keyword}%`;
 
-  // Get total count
+  const MANAGER_IMG = DEFAULT_IMAGES.MANAGER;
+  const hasKeyword = Boolean(keyword && keyword.trim().length > 0);
+  const safeKeyword = `%${String(keyword || '').trim()}%`;
+
+  const join = `
+    LEFT JOIN vehicle_make mk ON mk.id = v.vehicle_make_id
+    LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
+    LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
+    LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
+    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
+    LEFT JOIN vehicle_images vmi ON vmi.vehicle_image_id = v.vehicle_image_id
+    LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
+    LEFT JOIN states s ON s.id = v.vehicle_state_id
+  `;
+
+  const searchCondition = hasKeyword ? `(
+      v.manufacturing_year LIKE ?
+      OR mk.make_name LIKE ?
+      OR md.model_name LIKE ?
+      OR vv.variant_name LIKE ?
+      OR ft.fuel_type LIKE ?
+      OR st.staff LIKE ?
+      OR st.phone LIKE ?
+    )` : '1=1';
+
   const countSql = `
     SELECT COUNT(*) as total
     FROM vehicles v
-    LEFT JOIN vehicle_make vm ON v.vehicle_make_id = vm.id
-    LEFT JOIN vehicle_model vmo ON v.vehicle_model_id = vmo.vehicle_model_id
-    LEFT JOIN vehicle_variant vv ON v.vehicle_variant_id = vv.vehicle_variant_id
-    LEFT JOIN fuel_types ft ON v.fuel_type_id = ft.id
-    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
-    LEFT JOIN staff s ON v.vehicle_manager_id = s.staff_id
-    WHERE 
-      v.manufacturing_year LIKE ?
-      OR vm.make_name LIKE ?
-      OR vmo.model_name LIKE ?
-      OR vv.variant_name LIKE ?
-      OR ft.fuel_type LIKE ?
-      OR s.staff LIKE ?
-      OR s.phone LIKE ?
+    ${join}
+    WHERE ${searchCondition}
   `;
-  
-  const [countRows] = await db.query<RowDataPacket[]>(countSql, [
-    likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword
-  ]);
+
+  const countParams = hasKeyword
+    ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword]
+    : [];
+
+  const [countRows] = await db.query<RowDataPacket[]>(countSql, countParams);
   const total = countRows[0]?.total || 0;
 
-  const [rows] = await db.query<RowDataPacket[]>(
-    `
-    SELECT 
+  const sql = `
+    SELECT
       v.vehicle_id,
-      v.regs_no,
-      v.manufacturing_year,
-      v.base_price,
-      v.max_price,
-      v.vehicle_location,
-      vm.make_name AS vehicle_make,
-      vmo.model_name AS vehicle_model,
-      vv.variant_name AS vehicle_variant,
-      ft.fuel_type AS fuel_type,
+      v.auction_end_dttm AS end_time,
+      v.odometer_reading AS odometer,
+      v.regs_no AS regs_no,
+      COALESCE(v.vehicle_image_id, 1) AS img_index,
+      ft.fuel_type AS fuel,
       tt.transmission_name AS transmissionType,
       v.rc_availability,
       v.repo_date,
-      s.staff AS staff_name,
-      s.phone AS staff_phone,
-      ${buyerId ? 'CASE WHEN bb.buyer_id IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
-      ${buyerId ? 'CASE WHEN w.user_id IS NULL THEN 0 ELSE 1 END' : '0'} AS is_favorite
+      v.ownership_serial,
+      mk.make_name AS make,
+      vmi.img_extension AS img_extension,
+      md.model_name AS model,
+      vv.variant_name AS variant,
+      v.manufacturing_year AS manufacture_year,
+      COALESCE(v.expected_price, v.base_price) AS bid_amount,
+      st.staff AS manager_name,
+      st.phone AS manager_phone,
+      st.email AS manager_email,
+      st.staff_id AS manager_id,
+      ? AS manager_image,
+      v.added_on,
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN \'Winning\' ELSE \'Losing\' END' : 'NULL'} AS bidding_status,
+      ${buyerId ? 'CASE WHEN MAX(w.user_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS is_favorite
     FROM vehicles v
-    LEFT JOIN vehicle_make vm ON v.vehicle_make_id = vm.id
-    LEFT JOIN vehicle_model vmo ON v.vehicle_model_id = vmo.vehicle_model_id
-    LEFT JOIN vehicle_variant vv ON v.vehicle_variant_id = vv.vehicle_variant_id
-    LEFT JOIN fuel_types ft ON v.fuel_type_id = ft.id
-    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
-    LEFT JOIN staff s ON v.vehicle_manager_id = s.staff_id
-    ${buyerId ? 'LEFT JOIN buyer_bids bb ON bb.vehicle_id = v.vehicle_id AND bb.buyer_id = ?' : ''}
+    ${join}
+    ${buyerId ? `LEFT JOIN (
+      SELECT bb1.vehicle_id, bb1.buyer_id, bb1.top_bid_at_insert
+      FROM buyer_bids bb1
+      WHERE bb1.buyer_id = ?
+      AND bb1.created_dttm = (
+        SELECT MAX(bb2.created_dttm)
+        FROM buyer_bids bb2
+        WHERE bb2.vehicle_id = bb1.vehicle_id
+        AND bb2.buyer_id = bb1.buyer_id
+      )
+    ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
     ${buyerId ? 'LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?' : ''}
-    WHERE 
-      v.manufacturing_year LIKE ?
-      OR vm.make_name LIKE ?
-      OR vmo.model_name LIKE ?
-      OR vv.variant_name LIKE ?
-      OR ft.fuel_type LIKE ?
-      OR s.staff LIKE ?
-      OR s.phone LIKE ?
+    WHERE ${searchCondition}
+    GROUP BY v.vehicle_id
     ORDER BY v.added_on DESC
     LIMIT ? OFFSET ?
-    `,
-    buyerId ? [
-      buyerId,
-      buyerId,
-      likeKeyword,
-      likeKeyword,
-      likeKeyword,
-      likeKeyword,
-      likeKeyword,
-      likeKeyword,
-      likeKeyword,
-      safePageSize,
-      offset,
-    ] : [
-      likeKeyword,
-      likeKeyword,
-      likeKeyword,
-      likeKeyword,
-      likeKeyword,
-      likeKeyword,
-      likeKeyword,
-      safePageSize,
-      offset,
-    ]
-  );
+  `;
+
+  const params = [
+    MANAGER_IMG,
+    ...(buyerId ? [buyerId, buyerId] as any[] : []),
+    ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] as any[] : []),
+    safePageSize,
+    offset,
+  ];
+
+  const [rows] = await db.query<RowDataPacket[]>(sql, params);
 
   const data = rows.map((r) => ({
-    ...r,
+    vehicle_id: String(r.vehicle_id),
+    end_time: r.end_time ? new Date(r.end_time).toISOString() : null,
+    odometer: r.odometer != null ? String(r.odometer) : null,
+    fuel: r.fuel ?? null,
+    owner_serial: r.ownership_serial ?? null,
+    state_code: typeof r.regs_no === 'string' && r.regs_no.length >= 2 ? r.regs_no.substring(0,2) : null,
     has_bidded: (r as any).has_bidded === 1,
+    make: r.make ?? null,
+    model: r.model ?? null,
+    img_extension: r.img_extension ?? null,
+    variant: r.variant ?? null,
+    transmissionType: r.transmissionType ?? null,
     rc_availability: r.rc_availability == null ? null : Boolean(r.rc_availability),
     repo_date: r.repo_date ? new Date(r.repo_date).toISOString() : null,
+    regs_no: r.regs_no ?? null,
+    manufacture_year: r.manufacture_year ?? null,
+    vehicleId: r.vehicle_id,
+    imgIndex: Number((r as any).img_index) || 1,
+    bidding_status: r.bidding_status ?? null,
+    bid_amount: r.bid_amount != null ? String(r.bid_amount) : null,
+    manager_name: r.manager_name ?? null,
+    manager_phone: r.manager_phone ?? null,
+    manager_email: r.manager_email ?? null,
+    manager_image: r.manager_image ?? MANAGER_IMG,
+    manager_id: r.manager_id != null ? String(r.manager_id) : null,
     is_favorite: (r as any).is_favorite === 1,
-  })) as VehicleItem[];
+  })) as VehicleListItem[];
 
   return {
     data,
@@ -1133,6 +1159,188 @@ export async function filterVehiclesByGroup(
 }
 
 
+export async function filterVehiclesAll(
+  vehicleType: string,
+  vehicleFuel: string,
+  ownership: string,
+  rcAvailable: string,
+  state: string,
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
+  buyerId?: number
+): Promise<{ data: VehicleListItem[], total: number, page: number, pageSize: number, totalPages: number }> {
+  const db: Pool = getDb();
+  const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
+  const offset = (page - 1) * safePageSize;
+
+  const MANAGER_IMG = DEFAULT_IMAGES.MANAGER;
+
+  let join = `
+    LEFT JOIN vehicle_make mk ON mk.id = v.vehicle_make_id
+    LEFT JOIN vehicle_model md ON md.vehicle_model_id = v.vehicle_model_id
+    LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
+    LEFT JOIN fuel_types ft ON ft.id = v.fuel_type_id
+    LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
+    LEFT JOIN states s ON s.id = v.vehicle_state_id
+    LEFT JOIN vehicle_types vt ON vt.id = v.vehicle_type_id
+    LEFT JOIN vehicle_images vmi ON vmi.vehicle_image_id = v.vehicle_image_id
+    LEFT JOIN ownership_serial os ON os.ownership_id = CAST(v.ownership_serial AS UNSIGNED)
+  `;
+
+  // Base where: active auctions similar to "all" in group filter
+  let where = 'v.auction_end_dttm > NOW()';
+
+  const filterConditions: string[] = [];
+  const filterParams: any[] = [];
+
+  if (vehicleType && vehicleType.trim()) {
+    const typeIds = vehicleType.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => !isNaN(id));
+    if (typeIds.length > 0) {
+      filterConditions.push(`v.vehicle_type_id IN (${typeIds.map(() => '?').join(',')})`);
+      filterParams.push(...typeIds);
+    }
+  }
+
+  if (vehicleFuel && vehicleFuel.trim()) {
+    const fuelIds = vehicleFuel.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => !isNaN(id));
+    if (fuelIds.length > 0) {
+      filterConditions.push(`v.fuel_type_id IN (${fuelIds.map(() => '?').join(',')})`);
+      filterParams.push(...fuelIds);
+    }
+  }
+
+  if (ownership && ownership.trim()) {
+    const ownershipIds = ownership.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => !isNaN(id));
+    if (ownershipIds.length > 0) {
+      filterConditions.push(`os.ownership_id IN (${ownershipIds.map(() => '?').join(',')})`);
+      filterParams.push(...ownershipIds);
+    }
+  }
+
+  if (rcAvailable && rcAvailable.trim()) {
+    if (rcAvailable.toLowerCase() === 'true') {
+      filterConditions.push('v.rc_availability = 1');
+    } else if (rcAvailable.toLowerCase() === 'false') {
+      filterConditions.push('v.rc_availability = 0');
+    }
+  }
+
+  if (state && state.trim()) {
+    const stateValue = state.trim();
+    if (['north', 'west', 'south', 'east'].includes(stateValue.toLowerCase())) {
+      filterConditions.push('LOWER(TRIM(s.region)) = LOWER(TRIM(?))');
+      filterParams.push(stateValue);
+    } else {
+      filterConditions.push('LOWER(TRIM(s.state)) = LOWER(TRIM(?))');
+      filterParams.push(stateValue);
+    }
+  }
+
+  const whereClause = [where, ...filterConditions].join(' AND ');
+
+  const countSql = `
+    SELECT COUNT(*) as total
+    FROM vehicles v
+    ${join}
+    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
+    WHERE ${whereClause}
+  `;
+
+  const [countRows] = await db.query<RowDataPacket[]>(countSql, filterParams);
+  const total = countRows[0]?.total || 0;
+
+  const sql = `
+    SELECT
+      v.vehicle_id,
+      MAX(v.auction_end_dttm) AS end_time,
+      MAX(v.odometer_reading) AS odometer,
+      MAX(ft.fuel_type) AS fuel,
+      MAX(v.vehicle_image_id) AS vehicle_image_id,
+      MAX(tt.transmission_name) AS transmissionType,
+      MAX(v.rc_availability) AS rc_availability,
+      MAX(v.repo_date) AS repo_date,
+      MAX(os.ownership) AS ownership_label,
+      MAX(mk.make_name) AS make,
+      MAX(vmi.img_extension) AS img_extension,
+      MAX(md.model_name) AS model,
+      MAX(vv.variant_name) AS variant,
+      MAX(v.manufacturing_year) AS manufacture_year,
+      MAX(COALESCE(v.expected_price, v.base_price)) AS bid_amount,
+      MAX(st.staff) AS manager_name,
+      MAX(st.phone) AS manager_phone,
+      MAX(st.email) AS manager_email,
+      MAX(st.staff_id) AS manager_id,
+      ? AS manager_image,
+      MAX(v.regs_no) AS regs_no,
+      MAX(v.added_on) AS added_on,
+      ${buyerId ? 'CASE WHEN MAX(bb.buyer_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS has_bidded,
+      ${buyerId ? "CASE WHEN MAX(bb.buyer_id) IS NULL THEN NULL WHEN MAX(bb.top_bid_at_insert) = 1 THEN 'Winning' ELSE 'Losing' END" : 'NULL'} AS bidding_status,
+      ${buyerId ? 'CASE WHEN MAX(w.user_id) IS NULL THEN 0 ELSE 1 END' : '0'} AS is_favorite
+    FROM vehicles v
+    ${join}
+    LEFT JOIN transmission_type tt ON tt.id = v.transmission_type_id
+    ${buyerId ? `LEFT JOIN (
+      SELECT bb1.vehicle_id, bb1.buyer_id, bb1.top_bid_at_insert
+      FROM buyer_bids bb1
+      WHERE bb1.buyer_id = ?
+      AND bb1.created_dttm = (
+        SELECT MAX(bb2.created_dttm)
+        FROM buyer_bids bb2
+        WHERE bb2.vehicle_id = bb1.vehicle_id
+        AND bb2.buyer_id = bb1.buyer_id
+      )
+    ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
+    ${buyerId ? 'LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?' : ''}
+    WHERE ${whereClause}
+    GROUP BY v.vehicle_id
+    ORDER BY v.added_on DESC
+    LIMIT ? OFFSET ?
+  `;
+
+  const params = buyerId
+    ? [MANAGER_IMG, buyerId, buyerId, ...filterParams, safePageSize, offset]
+    : [MANAGER_IMG, ...filterParams, safePageSize, offset];
+
+  const [rows] = await db.query<RowDataPacket[]>(sql, params);
+
+  const result = rows.map((r) => ({
+    vehicle_id: String(r.vehicle_id),
+    end_time: r.end_time ? new Date(r.end_time).toISOString() : null,
+    odometer: r.odometer != null ? String(r.odometer) : null,
+    fuel: r.fuel ?? null,
+    owner_serial: r.ownership_label ?? null,
+    state_code: typeof r.regs_no === 'string' && r.regs_no.length >= 2 ? r.regs_no.substring(0,2) : null,
+    has_bidded: (r as any).has_bidded === 1,
+    make: r.make ?? null,
+    model: r.model ?? null,
+    img_extension: r.img_extension ?? null,
+    variant: r.variant ?? null,
+    transmissionType: r.transmissionType ?? null,
+    rc_availability: r.rc_availability == null ? null : Boolean(r.rc_availability),
+    repo_date: r.repo_date ? new Date(r.repo_date).toISOString() : null,
+    regs_no: r.regs_no ?? null,
+    manufacture_year: r.manufacture_year ?? null,
+    vehicleId: r.vehicle_id,
+    imgIndex: r.vehicle_image_id ?? 1,
+    bidding_status: r.bidding_status ?? null,
+    bid_amount: r.bid_amount != null ? String(r.bid_amount) : null,
+    manager_name: r.manager_name ?? null,
+    manager_phone: r.manager_phone ?? null,
+    manager_email: r.manager_email ?? null,
+    manager_image: r.manager_image ?? MANAGER_IMG,
+    manager_id: r.manager_id != null ? String(r.manager_id) : null,
+    is_favorite: (r as any).is_favorite === 1,
+  }));
+
+  return {
+    data: result,
+    total,
+    page,
+    pageSize: safePageSize,
+    totalPages: Math.ceil(total / safePageSize)
+  };
+}
+
 export async function getOwnershipTypes() {
   const db: Pool = getDb();
   const [rows] = await db.query<RowDataPacket[]>(
@@ -1176,5 +1384,34 @@ export async function getVehicleSubcategories() {
     `SELECT * FROM vehicle_subcategory ORDER BY sub_category_id ASC`
   );
   return rows;
+}
+
+export async function updateVehicleBidCounters(vehicleId: number, topBidderId: number | null): Promise<void> {
+  const db: Pool = getDb();
+  await db.query<ResultSetHeader>(
+    `UPDATE vehicles 
+     SET bids_count = bids_count + 1,
+         top_bidder_id = ?,
+         bidders_count = CASE WHEN NOT EXISTS(
+             SELECT 1 FROM buyer_bids WHERE vehicle_id = ? AND buyer_id = ?
+         ) THEN bidders_count + 1 ELSE bidders_count END
+     WHERE vehicle_id = ?`,
+    [topBidderId, vehicleId, topBidderId, vehicleId]
+  );
+}
+
+export async function extendAuctionEndTime(vehicleId: number): Promise<void> {
+  const db: Pool = getDb();
+  await db.query<ResultSetHeader>(
+    `UPDATE vehicles
+     SET auction_end_dttm = CASE
+       WHEN TIMESTAMPDIFF(SECOND, NOW(), auction_end_dttm) > 0
+        AND TIMESTAMPDIFF(SECOND, NOW(), auction_end_dttm) <= 300
+       THEN DATE_ADD(auction_end_dttm, INTERVAL LEAST(GREATEST(TIMESTAMPDIFF(SECOND, auction_end_dttm, final_expiry_dttm), 0), 300) SECOND)
+       ELSE auction_end_dttm
+     END
+     WHERE vehicle_id = ?`,
+    [vehicleId]
+  );
 }
 

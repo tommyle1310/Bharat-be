@@ -162,6 +162,28 @@ export async function getSelectedVehicleImages(req: Request, res: Response) {
   return sendSuccess(res, 'Vehicle images retrieved successfully', data);
 }
   
+export async function filterAll(req: Request, res: Response) {
+  const vehicleType = String(req.query.vehicle_type || '');
+  const vehicleFuel = String(req.query.fuel || req.query.vehicle_fuel || '');
+  const ownership = String(req.query.ownership || '');
+  const rcAvailable = String(req.query.rc_available || '');
+  const state = String(req.query.state || '');
+  const page = Number(req.query.page ?? 1);
+  const pageSize = Number(req.query.pageSize ?? 5);
+  const buyerId = req.buyer?.id;
+  const data = await service.filterVehiclesAll(
+    vehicleType,
+    vehicleFuel,
+    ownership,
+    rcAvailable,
+    state,
+    page,
+    pageSize,
+    buyerId
+  );
+  return sendSuccess(res, 'Vehicle filter completed successfully', data);
+}
+  
   
 
 
