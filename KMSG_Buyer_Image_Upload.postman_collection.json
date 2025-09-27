@@ -1,0 +1,272 @@
+{
+  "info": {
+    "name": "KMSG Buyer Image Upload API",
+    "description": "Complete test collection for buyer image upload functionality",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "kmsg-buyer-images-001"
+  },
+  "item": [
+    {
+      "name": "1. Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        },
+        "description": "Check if the server is running and Redis is connected"
+      },
+      "response": []
+    },
+    {
+      "name": "2. Get Buyer Info",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/kmsg/buyer/buyers/{{buyerId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["kmsg", "buyer", "buyers", "{{buyerId}}"]
+        },
+        "description": "Get buyer information by ID"
+      },
+      "response": []
+    },
+    {
+      "name": "3. Get Buyer by Mobile",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/kmsg/buyer/buyers/name/{{mobile}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["kmsg", "buyer", "buyers", "name", "{{mobile}}"]
+        },
+        "description": "Get buyer information by mobile number"
+      },
+      "response": []
+    },
+    {
+      "name": "4. Upload All Images (PAN + Aadhaar)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "pan_image",
+              "type": "file",
+              "src": [],
+              "description": "PAN card image (JPEG/PNG/WebP, max 10MB)"
+            },
+            {
+              "key": "aadhaar_front_image",
+              "type": "file", 
+              "src": [],
+              "description": "Aadhaar front image (JPEG/PNG/WebP, max 10MB)"
+            },
+            {
+              "key": "aadhaar_back_image",
+              "type": "file",
+              "src": [],
+              "description": "Aadhaar back image (JPEG/PNG/WebP, max 10MB)"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/kmsg/buyer/buyers/{{buyerId}}/upload-images",
+          "host": ["{{baseUrl}}"],
+          "path": ["kmsg", "buyer", "buyers", "{{buyerId}}", "upload-images"]
+        },
+        "description": "Upload all three document images (PAN, Aadhaar front, Aadhaar back)"
+      },
+      "response": []
+    },
+    {
+      "name": "5. Upload Only PAN Image",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "pan_image",
+              "type": "file",
+              "src": [],
+              "description": "PAN card image only"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/kmsg/buyer/buyers/{{buyerId}}/upload-images",
+          "host": ["{{baseUrl}}"],
+          "path": ["kmsg", "buyer", "buyers", "{{buyerId}}", "upload-images"]
+        },
+        "description": "Upload only PAN card image"
+      },
+      "response": []
+    },
+    {
+      "name": "6. Upload Only Aadhaar Images",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "aadhaar_front_image",
+              "type": "file",
+              "src": [],
+              "description": "Aadhaar front image"
+            },
+            {
+              "key": "aadhaar_back_image",
+              "type": "file",
+              "src": [],
+              "description": "Aadhaar back image"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/kmsg/buyer/buyers/{{buyerId}}/upload-images",
+          "host": ["{{baseUrl}}"],
+          "path": ["kmsg", "buyer", "buyers", "{{buyerId}}", "upload-images"]
+        },
+        "description": "Upload only Aadhaar front and back images"
+      },
+      "response": []
+    },
+    {
+      "name": "7. Upload Empty (No Images)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": []
+        },
+        "url": {
+          "raw": "{{baseUrl}}/kmsg/buyer/buyers/{{buyerId}}/upload-images",
+          "host": ["{{baseUrl}}"],
+          "path": ["kmsg", "buyer", "buyers", "{{buyerId}}", "upload-images"]
+        },
+        "description": "Test with no images uploaded (should return success with null IDs)"
+      },
+      "response": []
+    },
+    {
+      "name": "8. Test Invalid File Type",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "pan_image",
+              "type": "file",
+              "src": [],
+              "description": "Upload a PDF or other invalid file type"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/kmsg/buyer/buyers/{{buyerId}}/upload-images",
+          "host": ["{{baseUrl}}"],
+          "path": ["kmsg", "buyer", "buyers", "{{buyerId}}", "upload-images"]
+        },
+        "description": "Test error handling with invalid file type"
+      },
+      "response": []
+    },
+    {
+      "name": "9. Test Invalid Buyer ID",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "pan_image",
+              "type": "file",
+              "src": [],
+              "description": "Any valid image file"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/kmsg/buyer/buyers/99999/upload-images",
+          "host": ["{{baseUrl}}"],
+          "path": ["kmsg", "buyer", "buyers", "99999", "upload-images"]
+        },
+        "description": "Test with non-existent buyer ID"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:1310",
+      "description": "Base URL for the KMSG Buyer Service API"
+    },
+    {
+      "key": "buyerId",
+      "value": "1",
+      "description": "Valid buyer ID for testing"
+    },
+    {
+      "key": "mobile",
+      "value": "9876543210",
+      "description": "Valid mobile number for testing"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-set Content-Type for file uploads",
+          "if (pm.request.body && pm.request.body.mode === 'formdata') {",
+          "    pm.request.headers.remove('Content-Type');",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-test response status",
+          "pm.test('Response status is successful', function () {",
+          "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+          "});",
+          "",
+          "// Auto-test response has JSON body",
+          "pm.test('Response has JSON body', function () {",
+          "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+          "});",
+          "",
+          "// Auto-test response structure for image upload",
+          "if (pm.request.url.path.includes('upload-images')) {",
+          "    pm.test('Response contains expected fields', function () {",
+          "        const jsonData = pm.response.json();",
+          "        pm.expect(jsonData).to.have.property('message');",
+          "        pm.expect(jsonData).to.have.property('pan_doc_id');",
+          "        pm.expect(jsonData).to.have.property('aadhaar_front_doc_id');",
+          "        pm.expect(jsonData).to.have.property('aadhaar_back_doc_id');",
+          "    });",
+          "}"
+        ]
+      }
+    }
+  ]
+}

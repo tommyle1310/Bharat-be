@@ -1,0 +1,76 @@
+version: "3.8"
+services:
+  mysql:
+    image: mysql:8
+    container_name: indus_auction_system_buyer_service_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: prod_indus_db
+      MYSQL_USER: indus_app_user
+      MYSQL_PASSWORD: IndusProd
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.40"
+          memory: 768M
+    ports:
+      - "3308:3306"
+    volumes:
+      - indus_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      retries: 5
+      timeout: 5s
+
+  redis:
+    image: redis:7-alpine
+    container_name: indus_auction_system_buyer_service_redis
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.20"
+          memory: 128M
+    ports:
+      - "6381:6379"
+
+  app:
+    build: .
+    image: indus_auction_system_buyer_service-app
+    container_name: indus_auction_system_buyer_service_backend
+    restart: always
+    network_mode: host
+    deploy:
+      resources:
+        limits:
+          cpus: "0.40"
+          memory: 256M
+    env_file:
+      - .env.runtime
+    environment:
+      REDIS_HOST: 127.0.0.1   # thay cho 'redis'
+      REDIS_PORT: 6379
+      # Use the correct container directory structure
+      DATA_FILES_PATH: /app/data-files
+      DIR_BUYER: buyer
+    volumes:
+      # Mount the correct host directory with proper permissions
+      - /home/ubuntu/indus/data_files:/app/data-files:rw
+    # Run as specific user to avoid permission issues
+    user: "1000:1000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:1310/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  indus_mysql_data:

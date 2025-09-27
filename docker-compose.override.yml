@@ -1,0 +1,17 @@
+services:
+  redis-test:
+    image: redis:7-alpine
+    container_name: kmsg-redis-test
+    ports:
+      - "6380:6379"
+
+  mysql-test:
+    image: mysql:8
+    container_name: kmsg-mysql-test
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: prod_indus_db
+      MYSQL_USER: indus_app_user
+      MYSQL_PASSWORD: IndusProd
+    ports:
+      - "3307:3306"

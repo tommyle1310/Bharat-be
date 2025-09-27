@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: indus_auction_system_buyer_service_redis
+    restart: unless-stopped
+    # app sẽ connect via docker network to 'redis:6379' (container name)
+    # host mapping is optional for debug; env var REDIS_HOST_PORT defaults to 6380
+    ports:
+      - "${REDIS_HOST_PORT:-6380}:6379"
+    networks:
+      - indus_buyer_net
+
+networks:
+  indus_buyer_net:
+    external: true
+    name: indus_buyer_net
