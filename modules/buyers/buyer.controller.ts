@@ -77,8 +77,8 @@ export const uploadImages = async (req: Request, res: Response) => {
 
     // Process each image type
     panDocId = await handleDoc(panFile, 'PAN', buyerId);
-    aadhaarFrontDocId = await handleDoc(aadhaarFrontFile, 'AADHAAR', buyerId);
-    aadhaarBackDocId = await handleDoc(aadhaarBackFile, 'AADHAAR', buyerId);
+    aadhaarFrontDocId = await handleDoc(aadhaarFrontFile, 'ADHAAR_FRONT', buyerId);
+    aadhaarBackDocId = await handleDoc(aadhaarBackFile, 'ADHAAR_BACK', buyerId);
 
     // Update buyer with document IDs if any were processed
     if (panDocId || aadhaarFrontDocId || aadhaarBackDocId) {

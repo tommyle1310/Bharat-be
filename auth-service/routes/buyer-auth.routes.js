@@ -8,11 +8,6 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.post(
   '/register',
-  upload.fields([
-    { name: 'pan_image', maxCount: 1 },
-    { name: 'aadhaar_front_image', maxCount: 1 },
-    { name: 'aadhaar_back_image', maxCount: 1 }
-  ]),
   buyerAuthController.register
 );
 router.post('/login', buyerAuthController.login);
