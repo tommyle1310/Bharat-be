@@ -1228,17 +1228,44 @@ export async function filterVehiclesAll(
   }
 
   if (state && state.trim()) {
-    const stateValue = state.trim();
-    if (['north', 'west', 'south', 'east'].includes(stateValue.toLowerCase())) {
-      filterConditions.push('LOWER(TRIM(s.region)) = LOWER(TRIM(?))');
-      filterParams.push(stateValue);
-    } else {
-      filterConditions.push('LOWER(TRIM(s.state)) = LOWER(TRIM(?))');
-      filterParams.push(stateValue);
+    const tokens = state.split(',').map((t) => t.trim()).filter((t) => t.length > 0);
+    const regionsAllowed = new Set(['north', 'west', 'south', 'east']);
+
+    const stateIds = tokens
+      .map((t) => parseInt(t, 10))
+      .filter((n) => !Number.isNaN(n));
+
+    const regionTokens = tokens
+      .filter((t) => regionsAllowed.has(t.toLowerCase()))
+      .map((t) => t.toLowerCase());
+
+    const stateNames = tokens
+      .filter((t) => Number.isNaN(parseInt(t, 10)) && !regionsAllowed.has(t.toLowerCase()))
+      .map((t) => t.toLowerCase());
+
+    const stateSubConditions: string[] = [];
+
+    if (stateIds.length > 0) {
+      stateSubConditions.push(`s.id IN (${stateIds.map(() => '?').join(',')})`);
+      filterParams.push(...stateIds);
+    }
+
+    if (regionTokens.length > 0) {
+      stateSubConditions.push(`LOWER(TRIM(s.region)) IN (${regionTokens.map(() => '?').join(',')})`);
+      filterParams.push(...regionTokens);
+    }
+
+    if (stateNames.length > 0) {
+      stateSubConditions.push(`LOWER(TRIM(s.state)) IN (${stateNames.map(() => '?').join(',')})`);
+      filterParams.push(...stateNames);
+    }
+
+    if (stateSubConditions.length > 0) {
+      filterConditions.push(`(${stateSubConditions.join(' OR ')})`);
     }
   }
 
-  const whereClause = [where, ...filterConditions, 'v.auction_end_dttm > CONVERT_TZ(NOW(), \'UTC\', \'Asia/Kolkata\')'].join(' AND ');
+  const whereClause = [where, ...filterConditions, 'v.auction_end_dttm > NOW()'].join(' AND ');
 
   const countSql = `
     SELECT COUNT(*) as total
