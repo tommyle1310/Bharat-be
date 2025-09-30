@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import * as dao from './buyer.dao';
 import * as fs from 'fs';
 import * as path from 'path';
+import { config } from '../../config/config';
 
 // Helper function to ensure directory exists
 const ensureDir = (dirPath: string) => {
@@ -29,7 +30,9 @@ const handleDoc = async (file: Express.Multer.File | undefined, folder: string, 
   try {
     if (!file) return null;
     
-    const baseDir = process.env.DIR_BASE || process.env.DATA_FILES_PATH;
+    // Always use resolved static path from config; inside Docker this is /app/data-files
+    // which is bind-mounted to host /home/ubuntu/indus/data_files
+    const baseDir = config.static.dataFilesPath;
     const buyerDirName = process.env.DIR_BUYER || 'buyer';
     
     if (!baseDir) {
@@ -62,13 +65,17 @@ export const uploadImages = async (req: Request, res: Response) => {
   const files = (req as any).files || {};
   
   console.log(`uploadImages() received file fields: ${Object.keys(files).join(', ')}`);
-  console.log(`uploadImages() files object: ${JSON.stringify(Object.keys(files).reduce((acc: any, key: string) => ({ ...acc, [key]: files[key]?.length || 0 }), {}))}`);
+  console.log(`uploadImages() files object:`, files);
+  console.log(`uploadImages() req.body:`, req.body);
   
   const panFile = files.pan_image && files.pan_image[0];
   const aadhaarFrontFile = files.aadhaar_front_image && files.aadhaar_front_image[0];
   const aadhaarBackFile = files.aadhaar_back_image && files.aadhaar_back_image[0];
   
   console.log(`uploadImages() file processing: pan=${!!panFile}, aadhaarFront=${!!aadhaarFrontFile}, aadhaarBack=${!!aadhaarBackFile}`);
+  if (panFile) console.log(`PAN file details:`, { originalname: panFile.originalname, mimetype: panFile.mimetype, size: panFile.size });
+  if (aadhaarFrontFile) console.log(`Aadhaar front file details:`, { originalname: aadhaarFrontFile.originalname, mimetype: aadhaarFrontFile.mimetype, size: aadhaarFrontFile.size });
+  if (aadhaarBackFile) console.log(`Aadhaar back file details:`, { originalname: aadhaarBackFile.originalname, mimetype: aadhaarBackFile.mimetype, size: aadhaarBackFile.size });
 
   try {
     let panDocId = null;
