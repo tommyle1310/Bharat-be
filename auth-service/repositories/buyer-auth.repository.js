@@ -1,13 +1,47 @@
 const db = require("../../database/mysql/db-index");
 const logger = require("../../../shared/utils/logger/logger");
 
-exports.createBuyer = async (name, email, mobile, business_vertical, address, state_id, city_id, aadhaar_number, pan_number, company_name, pincode) => {
+exports.createBuyer = async (
+  name,
+  email,
+  mobile,
+  business_vertical,
+  address,
+  state_id,
+  city_id,
+  aadhaar_number,
+  pan_number,
+  company_name,
+  pincode
+) => {
   logger.info(`Creating buyer with phone: ${mobile}`);
   try {
     const [result] = await db.execute(
-      "INSERT INTO buyers (name, email, mobile, business_vertical, address, state_id, city_id, aadhaar_number, pan_number, company_name, pincode, expiry_date, buyer_status, verify_status, is_dummy, notification_opened, added_on, police_verification_status, pan_verification_status, aadhaar_verification_status, is_logged_in) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), 30, 0, 0, 0, NOW(), 0, 0, 0, 0)",
-      [name, email, mobile, business_vertical, address, state_id, city_id, aadhaar_number, pan_number, company_name, pincode]
+      `INSERT INTO buyers (
+        name, email, mobile, business_vertical, address,
+        state_id, city_id,
+        aadhaar_number, pan_number, company_name, pincode,
+        expiry_date, buyer_status, verify_status, is_dummy, notification_opened,
+        added_on, police_verification_status, pan_verification_status,
+        aadhaar_verification_status, is_logged_in
+      ) VALUES (
+        CONVERT(? USING utf8mb4),
+        CONVERT(? USING utf8mb4),
+        CONVERT(? USING utf8mb4),
+        CONVERT(? USING utf8mb4),
+        CONVERT(? USING utf8mb4),
+        ?, ?,
+        CONVERT(? USING utf8mb4),
+        CONVERT(? USING utf8mb4),
+        CONVERT(? USING utf8mb4),
+        ?,
+        CURDATE(), 30, 0, 0, 0, NOW(), 0, 0, 0, 0
+      )`,
+      [name, email, mobile, business_vertical, address,
+       state_id, city_id,
+       aadhaar_number, pan_number, company_name, pincode]
     );
+
     logger.info(`Buyer created with phone: ${mobile}`);
     return { insertId: result.insertId };
   } catch (err) {
@@ -15,6 +49,7 @@ exports.createBuyer = async (name, email, mobile, business_vertical, address, st
     throw err;
   }
 };
+
 
 // Existence checks
 exports.existsBuyerByPhone = async (mobile) => {
