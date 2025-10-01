@@ -163,7 +163,8 @@ export async function getBuyerBidHistoryByVehicle(buyerId: number, vehicleId: nu
   const total = countRows[0]?.total || 0;
 
   const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT bid_id, vehicle_id, buyer_id, bid_amt, bid_mode, top_bid_at_insert, created_dttm
+    `SELECT bid_id, vehicle_id, buyer_id, bid_amt, bid_mode, top_bid_at_insert, created_dttm,
+     cancel_request_status, cancel_request_dttm
      FROM ${BUYER_BIDS_TABLE}
      WHERE buyer_id = ? AND vehicle_id = ?
      ORDER BY created_dttm DESC, bid_amt DESC
@@ -435,4 +436,26 @@ export async function setTopBidFlag(bidId: number): Promise<void> {
     `UPDATE ${BUYER_BIDS_TABLE} SET top_bid_at_insert = 1 WHERE bid_id = ?`,
     [bidId]
   );
+}
+
+export async function requestCancelBid(bidId: number, buyerId: number): Promise<{ vehicleId: number }> {
+  const db: Pool = getDb();
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT vehicle_id FROM ${BUYER_BIDS_TABLE} WHERE bid_id = ? AND buyer_id = ? LIMIT 1`,
+    [bidId, buyerId]
+  );
+  if (rows.length === 0) {
+    throw new Error('Bid not found');
+  }
+  const vehicleId = Number(rows[0]!.vehicle_id);
+  const [res] = await db.query<ResultSetHeader>(
+    `UPDATE ${BUYER_BIDS_TABLE}
+     SET cancel_request_status = 'P', cancel_request_dttm = NOW()
+     WHERE bid_id = ? AND buyer_id = ?`,
+    [bidId, buyerId]
+  );
+  if (res.affectedRows === 0) {
+    throw new Error('Failed to request cancellation');
+  }
+  return { vehicleId };
 }

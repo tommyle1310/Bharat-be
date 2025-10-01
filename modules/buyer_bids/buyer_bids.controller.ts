@@ -256,3 +256,33 @@ export async function getBuyerLimits(req: Request, res: Response) {
 }
 
 
+export async function requestCancel(req: Request, res: Response) {
+  try {
+    const buyerId = Number(req.buyer?.id);
+    const bidId = Number(req.body?.bidId ?? req.params?.bidId);
+    if (!buyerId || Number.isNaN(buyerId)) {
+      return sendForbidden(res, 'Unauthorized');
+    }
+    if (!bidId || Number.isNaN(bidId)) {
+      return sendValidationError(res, 'Invalid bidId');
+    }
+
+    const { vehicleId } = await dao.requestCancelBid(bidId, buyerId);
+
+    try {
+      const redis = getRedis();
+      const payload = { vehicleId, buyerId, bidId };
+      await redis.publish('vehicle:bid:cancel', JSON.stringify(payload));
+    } catch (e) {
+      console.error('[requestCancel] Failed to publish vehicle:bid:cancel', e);
+    }
+
+    return sendSuccess(res, 'Cancellation requested', { vehicleId, buyerId, bidId });
+  } catch (err) {
+    if (err instanceof Error && err.message === 'Bid not found') {
+      return sendNotFound(res, 'Bid not found');
+    }
+    return sendInternalError(res, 'Failed to request cancellation');
+  }
+}
+
