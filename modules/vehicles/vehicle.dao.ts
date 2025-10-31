@@ -239,7 +239,9 @@ export async function searchVehicles(
   keyword: string,
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
-  buyerId?: number
+  buyerId?: number,
+  businessVertical: 'A' | 'B' | 'I' = 'A',
+  bucketId?: number
 ): Promise<{ data: VehicleListItem[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
   const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
@@ -270,16 +272,19 @@ export async function searchVehicles(
       OR st.phone LIKE ?
     )` : '1=1';
 
+  const bucketFilter = businessVertical === 'B' && bucketId ? ' AND v.bucket_id = ? AND v.vehicle_category_id = 20' : '';
+
   const countSql = `
     SELECT COUNT(*) as total
     FROM vehicles v
     ${join}
-    WHERE ${searchCondition} AND v.auction_end_dttm > NOW()
+    WHERE ${searchCondition} AND v.auction_end_dttm > NOW() AND v.auction_status_id = 10${bucketFilter}
   `;
 
-  const countParams = hasKeyword
-    ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword]
-    : [];
+  const countParams = [
+    ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
+    ...(bucketFilter ? [bucketId as number] : [])
+  ];
 
   const [countRows] = await db.query<RowDataPacket[]>(countSql, countParams);
   const total = countRows[0]?.total || 0;
@@ -325,7 +330,7 @@ export async function searchVehicles(
       )
     ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
     ${buyerId ? 'LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?' : ''}
-    WHERE ${searchCondition} AND v.auction_end_dttm > NOW()
+    WHERE ${searchCondition} AND v.auction_end_dttm > NOW() AND v.auction_status_id = 10${bucketFilter}
     GROUP BY v.vehicle_id
     ORDER BY v.auction_end_dttm ASC
     LIMIT ? OFFSET ?
@@ -335,6 +340,7 @@ export async function searchVehicles(
     MANAGER_IMG,
     ...(buyerId ? [buyerId, buyerId] as any[] : []),
     ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] as any[] : []),
+    ...(bucketFilter ? [bucketId as number] as any[] : []),
     safePageSize,
     offset,
   ];
@@ -385,7 +391,8 @@ export async function getVehiclesByGroup(
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
   buyerId?: number,
-  businessVertical: 'A' | 'B' | 'I' = 'A'
+  businessVertical: 'A' | 'B' | 'I' = 'A',
+  bucketId?: number
 ): Promise<{ data: VehicleListItem[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
   const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
@@ -426,6 +433,8 @@ export async function getVehiclesByGroup(
     `;
     where = "1=1" + categoryFilter;
   }
+
+  const bucketFilter = businessVertical === 'B' && bucketId ? ' AND v.bucket_id = ?' : '';
 
   const sql = `
     SELECT
@@ -475,7 +484,7 @@ export async function getVehiclesByGroup(
       )
     ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
     ${buyerId ? 'LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?' : ''}
-    WHERE ${where} AND v.auction_end_dttm > NOW()
+    WHERE ${where} AND v.auction_end_dttm > NOW() AND v.auction_status_id = 10${bucketFilter}
     GROUP BY v.vehicle_id
     ORDER BY v.auction_end_dttm ASC
     LIMIT ? OFFSET ?
@@ -493,7 +502,7 @@ export async function getVehiclesByGroup(
     LEFT JOIN vehicle_variant vv ON vv.vehicle_variant_id = v.vehicle_variant_id
     ${join}
     LEFT JOIN staff st ON st.staff_id = v.vehicle_manager_id
-    WHERE ${where} AND v.auction_end_dttm > NOW()
+    WHERE ${where} AND v.auction_end_dttm > NOW() AND v.auction_status_id = 10${bucketFilter}
   `;
 
   let countParams: any[];
@@ -509,10 +518,10 @@ export async function getVehiclesByGroup(
   let params: any[];
 
   if (type === "all") {
-    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, safePageSize, offset] : [MANAGER_IMG, safePageSize, offset];
+    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, ...(bucketFilter ? [bucketId as number] : []), safePageSize, offset] : [MANAGER_IMG, ...(bucketFilter ? [bucketId as number] : []), safePageSize, offset];
   } else {
-    // Order must match: manager_image, bb.buyer_id, w.user_id, title, limit, offset
-    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, safeTitle, safePageSize, offset] : [MANAGER_IMG, safeTitle, safePageSize, offset];
+    // Order must match: manager_image, bb.buyer_id, w.user_id, title, (optional bucketId), limit, offset
+    params = buyerId ? [MANAGER_IMG, buyerId, buyerId, safeTitle, ...(bucketFilter ? [bucketId as number] : []), safePageSize, offset] : [MANAGER_IMG, safeTitle, ...(bucketFilter ? [bucketId as number] : []), safePageSize, offset];
   }
 
   console.log('=== getVehiclesByGroup DEBUG ===');
@@ -575,7 +584,8 @@ export async function searchVehiclesByGroup(
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
   buyerId?: number,
-  businessVertical: 'A' | 'B' | 'I' = 'A'
+  businessVertical: 'A' | 'B' | 'I' = 'A',
+  bucketId?: number
 ): Promise<{ data: VehicleListItem[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
   const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
@@ -619,6 +629,8 @@ export async function searchVehiclesByGroup(
   } else {
     where = "1=1" + categoryFilter; // Default case
   }
+
+  const bucketFilter = businessVertical === 'B' && bucketId ? ' AND v.bucket_id = ?' : '';
 
   // Combine keyword search with type/title filter (only if keyword is provided)
   const hasKeyword = keyword && keyword.trim().length > 0;
@@ -675,7 +687,7 @@ export async function searchVehiclesByGroup(
       )
     ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
     ${buyerId ? 'LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?' : ''}
-    WHERE ${where} AND ${searchCondition} AND v.auction_end_dttm > NOW()
+    WHERE ${where} AND ${searchCondition} AND v.auction_end_dttm > NOW() AND v.auction_status_id = 10${bucketFilter}
     GROUP BY v.vehicle_id
     ORDER BY v.auction_end_dttm ASC
     LIMIT ? OFFSET ?
@@ -686,18 +698,20 @@ export async function searchVehiclesByGroup(
     SELECT COUNT(*) as total
     FROM vehicles v
     ${join}
-    WHERE ${where} AND ${searchCondition} AND v.auction_end_dttm > NOW()
+    WHERE ${where} AND ${searchCondition} AND v.auction_end_dttm > NOW() AND v.auction_status_id = 10${bucketFilter}
   `;
 
   let countParams: any[];
   if (type === "all") {
     countParams = [
-      ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : [])
+      ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
+      ...(bucketFilter ? [bucketId as number] : [])
     ];
   } else {
     countParams = [
       safeTitle,
-      ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : [])
+      ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
+      ...(bucketFilter ? [bucketId as number] : [])
     ];
   }
 
@@ -712,6 +726,7 @@ export async function searchVehiclesByGroup(
       MANAGER_IMG,
       ...(buyerId ? [buyerId, buyerId] : []),
       ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
+      ...(bucketFilter ? [bucketId as number] : []),
       safePageSize,
       offset,
     ];
@@ -722,6 +737,7 @@ export async function searchVehiclesByGroup(
       ...(buyerId ? [buyerId, buyerId] : []),
       safeTitle,
       ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
+      ...(bucketFilter ? [bucketId as number] : []),
       safePageSize,
       offset,
     ];
@@ -791,10 +807,14 @@ export async function searchVehiclesByGroup(
 
 export async function getVehicleDetails(
   vehicleId: number,
-  buyerId?: number
+  buyerId?: number,
+  businessVertical: 'A' | 'B' | 'I' = 'A',
+  bucketId?: number
 ): Promise<VehicleListItem | null> {
   const db: Pool = getDb();
   const MANAGER_IMG = DEFAULT_IMAGES.MANAGER; // Fallback to external URL
+
+  const bucketFilter = businessVertical === 'B' && bucketId ? ' AND v.bucket_id = ? AND v.vehicle_category_id = 20' : '';
 
   const sql = `SELECT
       v.vehicle_id,
@@ -848,11 +868,13 @@ export async function getVehicleDetails(
       )
     ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
     ${buyerId ? 'LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?' : ''}
-    WHERE v.vehicle_id = ?
+    WHERE v.vehicle_id = ? AND v.auction_status_id = 10${bucketFilter}
     GROUP BY v.vehicle_id
     LIMIT 1`;
 
-  const params = buyerId ? [MANAGER_IMG, buyerId, buyerId, vehicleId] : [MANAGER_IMG, vehicleId];
+  const params = buyerId
+    ? [MANAGER_IMG, buyerId, buyerId, vehicleId, ...(bucketFilter ? [bucketId as number] : [])]
+    : [MANAGER_IMG, vehicleId, ...(bucketFilter ? [bucketId as number] : [])];
   
   const [rows] = await db.query<RowDataPacket[]>(sql, params);
 
@@ -907,7 +929,8 @@ export async function filterVehiclesByGroup(
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
   buyerId?: number,
-  businessVertical: 'A' | 'B' | 'I' = 'A'
+  businessVertical: 'A' | 'B' | 'I' = 'A',
+  bucketId?: number
 ): Promise<{ data: VehicleListItem[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
   const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
@@ -1019,7 +1042,11 @@ export async function filterVehiclesByGroup(
   if (filterConditions.length > 0) {
     allConditions.push(...filterConditions);
   }
-  allConditions.push("v.auction_end_dttm > NOW()");
+  allConditions.push("v.auction_end_dttm > NOW()", "v.auction_status_id = 10");
+  if (businessVertical === 'B' && bucketId) {
+    allConditions.push("v.bucket_id = ?", "v.vehicle_category_id = 20");
+    filterParams.push(bucketId);
+  }
   const whereClause = allConditions.join(" AND ");
 
   const sql = `
@@ -1169,7 +1196,9 @@ export async function filterVehiclesAll(
   state: string,
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
-  buyerId?: number
+  buyerId?: number,
+  businessVertical: 'A' | 'B' | 'I' = 'A',
+  bucketId?: number
 ): Promise<{ data: VehicleListItem[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
   const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
@@ -1265,7 +1294,12 @@ export async function filterVehiclesAll(
     }
   }
 
-  const whereClause = [where, ...filterConditions, 'v.auction_end_dttm > NOW()'].join(' AND ');
+  if (businessVertical === 'B' && bucketId) {
+    filterConditions.push('v.bucket_id = ?', 'v.vehicle_category_id = 20');
+    filterParams.push(bucketId);
+  }
+
+  const whereClause = [where, ...filterConditions, 'v.auction_end_dttm > NOW()', 'v.auction_status_id = 10'].join(' AND ');
 
   const countSql = `
     SELECT COUNT(*) as total
@@ -1444,3 +1478,97 @@ export async function extendAuctionEndTime(vehicleId: number): Promise<void> {
   );
 }
 
+
+export interface BucketListItem {
+  bucket_id: number;
+  bucket_name: string;
+  bucket_end_dttm: string | null;
+  state: string | null;
+  vehicles_count: number;
+}
+
+export async function getBucketsByGroup(
+  type: 'state' | 'auction_status' | 'all',
+  title: string,
+  page = 1,
+  pageSize = DEFAULT_PAGE_SIZE,
+  businessVertical: 'A' | 'B' | 'I' = 'A',
+  bucketId?: number
+): Promise<{ data: BucketListItem[], total: number, page: number, pageSize: number, totalPages: number }> {
+  const db: Pool = getDb();
+  const safePageSize = Math.min(Math.max(1, pageSize), MAX_PAGE_SIZE);
+  const offset = (page - 1) * safePageSize;
+
+  const safeTitle = String(title || '').trim();
+
+  const join = `
+    LEFT JOIN vehicles v ON v.bucket_id = b.bucket_id
+    LEFT JOIN states s ON s.id = v.vehicle_state_id
+    LEFT JOIN case_options co ON co.id = v.case_option_id
+  `;
+
+  let where = 'v.auction_status_id = 10';
+  const params: any[] = [];
+
+  if (type === 'state') {
+    where += ' AND LOWER(TRIM(s.region)) = LOWER(?)';
+    params.push(safeTitle);
+  } else if (type === 'auction_status') {
+    where += ' AND LOWER(TRIM(co.case_name)) = LOWER(?)';
+    params.push(safeTitle);
+  }
+
+  if (businessVertical === 'B') {
+    where += ' AND v.vehicle_category_id = 20';
+  } else if (businessVertical === 'I') {
+    where += ' AND v.vehicle_category_id = 10';
+  }
+
+  if (bucketId != null && !Number.isNaN(bucketId)) {
+    where += ' AND b.bucket_id = ?';
+    params.push(bucketId);
+  }
+
+  const countSql = `
+    SELECT COUNT(DISTINCT b.bucket_id) AS total
+    FROM bucket b
+    ${join}
+    WHERE ${where}
+  `;
+
+  const [countRows] = await db.query<RowDataPacket[]>(countSql, params);
+  const total = countRows[0]?.total || 0;
+
+  const sql = `
+    SELECT
+      b.bucket_id AS bucket_id,
+      b.bucket_nm AS bucket_name,
+      b.auction_end_dttm AS bucket_end_dttm,
+      MAX(s.state) AS state,
+      COUNT(DISTINCT v.vehicle_id) AS vehicles_count
+    FROM bucket b
+    ${join}
+    WHERE ${where}
+    GROUP BY b.bucket_id
+    ORDER BY b.auction_end_dttm ASC
+    LIMIT ? OFFSET ?
+  `;
+
+  const listParams = [...params, safePageSize, offset];
+  const [rows] = await db.query<RowDataPacket[]>(sql, listParams);
+  const data: BucketListItem[] = rows.map(r => ({
+    bucket_id: Number(r.bucket_id),
+    bucket_name: r.bucket_name,
+    bucket_end_dttm: r.bucket_end_dttm ? new Date(r.bucket_end_dttm).toISOString() : null,
+    state: r.state ?? null,
+    vehicles_count: Number(r.vehicles_count) || 0,
+  }));
+
+  return {
+    data,
+    total,
+    page,
+    pageSize: safePageSize,
+    totalPages: Math.ceil(total / safePageSize)
+  };
+}

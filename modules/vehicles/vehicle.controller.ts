@@ -15,7 +15,9 @@ export async function get(req: Request, res: Response) {
     return sendValidationError(res, 'Invalid vehicle id');
   }
   const buyerId = req.buyer?.id;
-  const item = await service.getVehicleDetails(id, buyerId);
+  const businessVertical = String(req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
+  const bucketId = req.query.bucketId != null ? Number(req.query.bucketId) : undefined;
+  const item = await service.getVehicleDetails(id, buyerId, businessVertical, bucketId);
   if (!item) return sendNotFound(res, 'Vehicle not found');
   return sendSuccess(res, 'Vehicle details retrieved successfully', item);
 }
@@ -69,7 +71,8 @@ export async function listByGroup(req: Request, res: Response) {
   }
 
   const buyerId = req.buyer?.id;
-  const data = await service.listByGroup(type as 'state' | 'auction_status' | 'all', title, page, pageSize, buyerId, businessVertical);
+  const bucketId = req.query.bucketId != null ? Number(req.query.bucketId) : undefined;
+  const data = await service.listByGroup(type as 'state' | 'auction_status' | 'all', title, page, pageSize, buyerId, businessVertical, bucketId);
   return sendSuccess(res, 'Vehicles by group retrieved successfully', data);
 }
 
@@ -78,7 +81,9 @@ export async function search(req: Request, res: Response) {
   const page = Number(req.query.page ?? 1);
   const pageSize = Number(req.query.pageSize ?? 5);
   const buyerId = req.buyer?.id;
-  const data = await service.searchVehicles(keyword, page, pageSize, buyerId);
+  const businessVertical = String(req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
+  const bucketId = req.query.bucketId != null ? Number(req.query.bucketId) : undefined;
+  const data = await service.searchVehicles(keyword, page, pageSize, buyerId, businessVertical, bucketId);
   return sendSuccess(res, 'Vehicle search completed successfully', data);
 }
 export async function searchByGroup(req: Request, res: Response) {
@@ -89,7 +94,8 @@ export async function searchByGroup(req: Request, res: Response) {
   const pageSize = Number(req.query.pageSize ?? 5);
   const buyerId = req.buyer?.id;
   const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
-  const data = await service.searchVehiclesByGroup(keyword, type as 'state' | 'auction_status' | 'all', title, page, pageSize, buyerId, businessVertical);
+  const bucketId = req.query.bucketId != null ? Number(req.query.bucketId) : undefined;
+  const data = await service.searchVehiclesByGroup(keyword, type as 'state' | 'auction_status' | 'all', title, page, pageSize, buyerId, businessVertical, bucketId);
   return sendSuccess(res, 'Vehicle search by group completed successfully', data);
 }
 
@@ -104,6 +110,7 @@ export async function filterByGroup(req: Request, res: Response) {
   const page = Number(req.query.page ?? 1);
   const pageSize = Number(req.query.pageSize ?? 5);
   const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
+  const bucketId = req.query.bucketId != null ? Number(req.query.bucketId) : undefined;
   
   if (!type || !title) {
     return sendValidationError(res, 'type and title query params are required');
@@ -126,7 +133,8 @@ export async function filterByGroup(req: Request, res: Response) {
     page, 
     pageSize,
     buyerId,
-    businessVertical
+    businessVertical,
+    bucketId
   );
   return sendSuccess(res, 'Vehicle filter by group completed successfully', data);
 }
@@ -171,6 +179,8 @@ export async function filterAll(req: Request, res: Response) {
   const page = Number(req.query.page ?? 1);
   const pageSize = Number(req.query.pageSize ?? 5);
   const buyerId = req.buyer?.id;
+  const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
+  const bucketId = req.query.bucketId != null ? Number(req.query.bucketId) : undefined;
   const data = await service.filterVehiclesAll(
     vehicleType,
     vehicleFuel,
@@ -179,9 +189,28 @@ export async function filterAll(req: Request, res: Response) {
     state,
     page,
     pageSize,
-    buyerId
+    buyerId,
+    businessVertical,
+    bucketId
   );
   return sendSuccess(res, 'Vehicle filter completed successfully', data);
+}
+
+export async function bucketsByGroup(req: Request, res: Response) {
+  let type = String(req.query.type || '').toLowerCase();
+  if (type === 'aunction_status') type = 'auction_status';
+  const title = String(req.query.title || '');
+  const page = Number(req.query.page ?? 1);
+  const pageSize = Number(req.query.pageSize ?? 5);
+  const businessVertical = String(req.params.businessVertical || req.query.businessVertical || 'A').toUpperCase() as 'A'|'B'|'I';
+  const bucketId = req.query.bucketId != null ? Number(req.query.bucketId) : undefined;
+
+  if (!type || !['state','auction_status','all'].includes(type)) {
+    return sendValidationError(res, 'Invalid type. Must be "state", "auction_status", or "all"');
+  }
+
+  const data = await service.listBucketsByGroup(type as 'state'|'auction_status'|'all', title, page, pageSize, businessVertical, bucketId);
+  return sendSuccess(res, 'Buckets by group retrieved successfully', data);
 }
   
   

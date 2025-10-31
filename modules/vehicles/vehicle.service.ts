@@ -6,8 +6,8 @@ export async function list(page?: number, pageSize?: number) {
   return dao.listVehicles(page, pageSize);
 }
 
-export async function getVehicleDetails(id: number, buyerId?: number) {
-  return dao.getVehicleDetails(id, buyerId);
+export async function getVehicleDetails(id: number, buyerId?: number, businessVertical: 'A'|'B'|'I' = 'A', bucketId?: number) {
+  return dao.getVehicleDetails(id, buyerId, businessVertical, bucketId);
 }
 
 export async function create(payload: Vehicle) {
@@ -29,15 +29,15 @@ export async function groups(businessVertical: 'A'|'B'|'I' = 'A'): Promise<Vehic
   return dao.getGroups(businessVertical);
 }
 
-export async function listByGroup(type: 'state' | 'auction_status' | 'all', title: string, page?: number, pageSize?: number, buyerId?: number, businessVertical: 'A' | 'B' | 'I' = 'A') {
-  return dao.getVehiclesByGroup(type, title, page, pageSize, buyerId, businessVertical);
+export async function listByGroup(type: 'state' | 'auction_status' | 'all', title: string, page?: number, pageSize?: number, buyerId?: number, businessVertical: 'A' | 'B' | 'I' = 'A', bucketId?: number) {
+  return dao.getVehiclesByGroup(type, title, page, pageSize, buyerId, businessVertical, bucketId);
 }
 
-export async function searchVehicles(keyword: string, page?: number, pageSize?: number, buyerId?: number) {
-  return dao.searchVehicles(keyword, page, pageSize, buyerId);
+export async function searchVehicles(keyword: string, page?: number, pageSize?: number, buyerId?: number, businessVertical: 'A'|'B'|'I' = 'A', bucketId?: number) {
+  return dao.searchVehicles(keyword, page, pageSize, buyerId, businessVertical, bucketId);
 }
-export async function searchVehiclesByGroup(keyword: string, type: 'state' | 'auction_status' | 'all', title: string, page?: number, pageSize?: number, buyerId?: number, businessVertical: 'A' | 'B' | 'I' = 'A') {
-  return dao.searchVehiclesByGroup(keyword, type, title, page, pageSize, buyerId, businessVertical);
+export async function searchVehiclesByGroup(keyword: string, type: 'state' | 'auction_status' | 'all', title: string, page?: number, pageSize?: number, buyerId?: number, businessVertical: 'A' | 'B' | 'I' = 'A', bucketId?: number) {
+  return dao.searchVehiclesByGroup(keyword, type, title, page, pageSize, buyerId, businessVertical, bucketId);
 }
 
 export async function filterVehiclesByGroup(
@@ -51,9 +51,10 @@ export async function filterVehiclesByGroup(
   page?: number,
   pageSize?: number,
   buyerId?: number,
-  businessVertical: 'A' | 'B' | 'I' = 'A'
+  businessVertical: 'A' | 'B' | 'I' = 'A',
+  bucketId?: number
 ) {
-  return dao.filterVehiclesByGroup(type, title, vehicleType, vehicleFuel, ownership, rcAvailable, state, page, pageSize, buyerId, businessVertical);
+  return dao.filterVehiclesByGroup(type, title, vehicleType, vehicleFuel, ownership, rcAvailable, state, page, pageSize, buyerId, businessVertical, bucketId);
 }
 
 export async function filterVehiclesAll(
@@ -65,8 +66,10 @@ export async function filterVehiclesAll(
   page?: number,
   pageSize?: number,
   buyerId?: number,
+  businessVertical: 'A'|'B'|'I' = 'A',
+  bucketId?: number,
 ) {
-  return dao.filterVehiclesAll(vehicleType, vehicleFuel, ownership, rcAvailable, state, page, pageSize, buyerId);
+  return dao.filterVehiclesAll(vehicleType, vehicleFuel, ownership, rcAvailable, state, page, pageSize, buyerId, businessVertical, bucketId);
 }
 
 export async function getOwnershipTypes() {
@@ -87,4 +90,8 @@ export async function getVehicleSubcategories() {
 export async function getSelectedVehicleImages(id: number) {
   console.log('check id', id)
   return dao.getSelectedVehicleImages(id);
+}
+
+export async function listBucketsByGroup(type: 'state'|'auction_status'|'all', title: string, page?: number, pageSize?: number, businessVertical: 'A'|'B'|'I' = 'A', bucketId?: number) {
+  return dao.getBucketsByGroup(type, title, page, pageSize, businessVertical, bucketId);
 }
