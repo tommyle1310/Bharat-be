@@ -81,11 +81,19 @@ exports.register = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
-  const { phone, password } = req.body || {};
-  logger.info(`Login attempt for phone: ${phone}`);
+  // More robust extraction: handle both 'phone' and 'mobile' field names
+  const body = req.body || {};
+  
+  // Debug logging to diagnose body parsing issues
+  logger.info(`Login attempt - req.body type: ${typeof req.body}, body keys: ${req.body ? Object.keys(req.body).join(', ') : 'none'}, Content-Type: ${req.headers['content-type']}`);
+  
+  const phone = body.phone || body.mobile || null;
+  const password = body.password || null;
+  
+  logger.info(`Login attempt - extracted phone: ${phone}, password: ${password ? 'provided' : 'missing'}`);
 
   if (!phone || !password) {
-    logger.warn('Login validation failed: phone or password missing');
+    logger.warn(`Login validation failed: phone=${phone ? 'provided' : 'missing'}, password=${password ? 'provided' : 'missing'}`);
     return res.status(400).json({ message: 'phone and password are required' });
   }
 

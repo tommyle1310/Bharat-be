@@ -53,14 +53,21 @@ exports.createBuyer = async (
 
 // Existence checks
 exports.existsBuyerByPhone = async (mobile) => {
+  // Ensure mobile is not undefined - convert to null for SQL safety
+  if (mobile === undefined) {
+    logger.error('existsBuyerByPhone called with undefined mobile');
+    return false;
+  }
+  const safeMobile = mobile || null;
+  
   try {
     const [rows] = await db.execute(
       "SELECT id FROM buyers WHERE mobile = ? LIMIT 1",
-      [mobile]
+      [safeMobile]
     );
     return rows && rows.length > 0;
   } catch (err) {
-    logger.error(`Error checking phone exists ${mobile}: ${err.message}`);
+    logger.error(`Error checking phone exists ${safeMobile}: ${err.message}`);
     throw err;
   }
 };
@@ -81,16 +88,26 @@ exports.existsBuyerByEmail = async (email) => {
 
 
 exports.getBuyerByPhone = async (mobile) => {
-  logger.info(`Fetching buyer by phone: ${mobile}`);
+  // Ensure mobile is not undefined - convert to null for SQL safety
+  if (mobile === undefined) {
+    logger.error('getBuyerByPhone called with undefined mobile');
+    throw new Error('Mobile parameter cannot be undefined');
+  }
+  const safeMobile = mobile || null;
+  
+  logger.info(`Fetching buyer by phone: ${safeMobile}`);
   try {
     const [users] = await db.execute(
       "SELECT id, mobile, password, salt, category_id FROM buyers WHERE mobile = ?",
-      [mobile]
+      [safeMobile]
     );
-    logger.info(`Fetched buyer by phone: ${mobile}, salt: ${users[0].salt}`);
-    return users[0];
+    if (users && users.length > 0) {
+      logger.info(`Fetched buyer by phone: ${safeMobile}, salt: ${users[0].salt}`);
+      return users[0];
+    }
+    return null;
   } catch (err) {
-    logger.error(`Error fetching buyer by phone ${mobile}: ${err.message}`);
+    logger.error(`Error fetching buyer by phone ${safeMobile}: ${err.message}`);
     throw err;
   }
 };
