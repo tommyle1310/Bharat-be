@@ -5,6 +5,21 @@ import { DEFAULT_IMAGES } from '../../utils/static-files';
 export const DEFAULT_PAGE_SIZE = 5;
 export const MAX_PAGE_SIZE = 100;
 
+export enum AuctionStatus {
+  APPROVAL_PENDING = 'APPROVAL_PENDING',
+  APPROVED = 'APPROVED',
+  PAYMENT_PENDING = 'PAYMENT_PENDING',
+  COMPLETED = 'COMPLETED'
+}
+
+// Mapping from string status to auction_status_id
+const AUCTION_STATUS_ID_MAP: Record<AuctionStatus, number[]> = {
+  [AuctionStatus.APPROVAL_PENDING]: [20],
+  [AuctionStatus.APPROVED]: [30],
+  [AuctionStatus.PAYMENT_PENDING]: [70],
+  [AuctionStatus.COMPLETED]: [100, 120, 140]
+};
+
 export interface WinningVehicle {
   vehicle_id: string;
   end_time: string | null;
@@ -32,6 +47,7 @@ export interface WinningVehicle {
   manager_email: string | null;
   manager_image: string;
   manager_id: string | null;
+  auction_status: number | null;
 }
 
 export async function getWinningVehicles(
@@ -39,7 +55,12 @@ export async function getWinningVehicles(
   businessVertical: 'A'|'B'|'I' = 'A',
   page = 1,
   pageSize = DEFAULT_PAGE_SIZE,
-  filters?: { rcAvailable?: string; vehicleFuel?: string },
+  filters?: { 
+    rcAvailable?: string; 
+    vehicleFuel?: string; 
+    auction_status_id?: number;
+    auction_status?: AuctionStatus;
+  },
   keyword?: string
 ): Promise<{ data: WinningVehicle[], total: number, page: number, pageSize: number, totalPages: number }> {
   const db: Pool = getDb();
@@ -53,6 +74,28 @@ export async function getWinningVehicles(
 
   const rcFilter = String(filters?.rcAvailable || '');
   const fuelFilter = String(filters?.vehicleFuel || '');
+  
+  // Handle auction status filtering
+  let auctionStatusFilter = '';
+  const auctionStatusParams: number[] = [];
+  
+  if (filters?.auction_status_id) {
+    // Direct auction_status_id filtering
+    auctionStatusFilter = ' AND v.auction_status_id = ?';
+    auctionStatusParams.push(filters.auction_status_id);
+  } else if (filters?.auction_status) {
+    // Map auction_status string to auction_status_id(s)
+    const statusIds = AUCTION_STATUS_ID_MAP[filters.auction_status];
+    if (statusIds && statusIds.length > 0) {
+      if (statusIds.length === 1) {
+        auctionStatusFilter = ' AND v.auction_status_id = ?';
+        auctionStatusParams.push(statusIds[0]!);
+      } else {
+        auctionStatusFilter = ` AND v.auction_status_id IN (${statusIds.map(() => '?').join(', ')})`;
+        auctionStatusParams.push(...statusIds);
+      }
+    }
+  }
 
   // Sanitize keyword input
   const safeKeyword = keyword ? `%${String(keyword).trim()}%` : null;
@@ -89,6 +132,7 @@ export async function getWinningVehicles(
       vv.variant_name AS variant,
       v.manufacturing_year AS manufacture_year,
       COALESCE(v.expected_price, v.base_price) AS bid_amount,
+      v.auction_status_id AS auction_status,
       st.staff AS manager_name,
       st.phone AS manager_phone,
       st.email AS manager_email,
@@ -134,7 +178,7 @@ export async function getWinningVehicles(
       )
     ) bb ON bb.vehicle_id = v.vehicle_id
     LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?
-    WHERE 1=1 ${categoryFilter} ${searchCondition}
+    WHERE 1=1 ${categoryFilter} ${auctionStatusFilter} ${searchCondition}
     GROUP BY v.vehicle_id
     HAVING total_flags >= 4
     AND bidding_status = 'Winning'
@@ -150,6 +194,7 @@ export async function getWinningVehicles(
     buyerId,
     buyerId,
     buyerId,
+    ...auctionStatusParams,
     ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : []),
     safePageSize,
     offset,
@@ -202,6 +247,7 @@ export async function getWinningVehicles(
       manager_email: r.manager_email ?? null,
       manager_image: r.manager_image ?? MANAGER_IMG,
       manager_id: r.manager_id != null ? String(r.manager_id) : null,
+      auction_status: r.auction_status ?? null,
     }));
 
     // Get total count for pagination
@@ -244,7 +290,7 @@ export async function getWinningVehicles(
             AND bb2.buyer_id = bb1.buyer_id
           )
         ) bb ON bb.vehicle_id = v.vehicle_id
-        WHERE 1=1 ${categoryFilter} ${searchCondition}
+        WHERE 1=1 ${categoryFilter} ${auctionStatusFilter} ${searchCondition}
         GROUP BY v.vehicle_id
         HAVING (vt_flag + sc_flag + st_flag + sl_flag + mk_flag) >= 4
         AND bidding_status = 'Winning'
@@ -258,6 +304,7 @@ export async function getWinningVehicles(
       buyerId,
       buyerId,
       buyerId,
+      ...auctionStatusParams,
       ...(hasKeyword ? [safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword, safeKeyword] : [])
     ];
 
