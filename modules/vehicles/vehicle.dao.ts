@@ -951,7 +951,7 @@ export async function getVehicleDetails(
       )
     ) bb ON bb.vehicle_id = v.vehicle_id` : ''}
     ${buyerId ? 'LEFT JOIN watchlist w ON w.vehicle_id = v.vehicle_id AND w.user_id = ?' : ''}
-    WHERE v.vehicle_id = ? AND v.auction_status_id = 10${bucketFilter}
+    WHERE v.vehicle_id = ?${bucketFilter}
     GROUP BY v.vehicle_id
     LIMIT 1`;
 
