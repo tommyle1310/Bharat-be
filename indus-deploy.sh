@@ -169,10 +169,27 @@ start(){
 
   # Decide DB usage:
   local use_local_db=0
+  local use_system_mysql=0
+  
   if [[ "$PREFER_LOCAL_DB" -eq 1 || -z "$DB_HOST" || "$DB_HOST" == "127.0.0.1" || "$DB_HOST" == "localhost" ]]; then
     use_local_db=1
   else
-    if check_tcp "$DB_HOST" "$DB_PORT"; then
+    # Check if DB_HOST resolves to this server (same server scenario)
+    local db_ip=$(getent hosts "$DB_HOST" 2>/dev/null | awk '{ print $1 }' | head -n1 || echo "")
+    local my_public_ip=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "")
+    local my_local_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "")
+    
+    # If DB_HOST is this server's IP, check for system MySQL
+    if [[ -n "$db_ip" && ( "$db_ip" == "$my_public_ip" || "$db_ip" == "$my_local_ip" ) ]]; then
+      # Check if system MySQL is running on 3306
+      if sudo ss -ltn 2>/dev/null | grep -q ':3306 ' || sudo lsof -ti :3306 -sTCP:LISTEN >/dev/null 2>&1; then
+        log "DB host $DB_HOST resolves to this server ($db_ip) and MySQL is running locally on port 3306"
+        use_system_mysql=1
+      else
+        log "DB host $DB_HOST is this server but MySQL not running on 3306 -> fallback to docker mysql"
+        use_local_db=1
+      fi
+    elif check_tcp "$DB_HOST" "$DB_PORT"; then
       log "External DB reachable at $DB_HOST:$DB_PORT"
       use_local_db=0
     else
@@ -188,9 +205,18 @@ start(){
            -e 's/^REDIS_PORT=.*/REDIS_PORT=6379/' \
            -e 's/^REDIS_TLS=.*/REDIS_TLS=false/' "$RUNTIME_ENV"
   fi
-  if [[ "$use_local_db" -eq 1 ]]; then
+  
+  # Handle system MySQL vs Docker MySQL
+  if [[ "$use_system_mysql" -eq 1 ]]; then
+    # Use the system MySQL service on localhost:3306
+    sed -i -e 's/^DB_HOST=.*/DB_HOST=127.0.0.1/' \
+           -e 's/^DB_PORT=.*/DB_PORT=3306/' "$RUNTIME_ENV"
+    log "Using system MySQL at 127.0.0.1:3306"
+  elif [[ "$use_local_db" -eq 1 ]]; then
+    # Use Docker MySQL container
     sed -i -e 's/^DB_HOST=.*/DB_HOST=mysql/' \
            -e 's/^DB_PORT=.*/DB_PORT=3306/' "$RUNTIME_ENV"
+    log "Using Docker MySQL container"
   fi
 
   # Handle file paths for local vs remote environments
