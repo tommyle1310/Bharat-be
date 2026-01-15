@@ -64,6 +64,11 @@ docker restart indus_auction_system_buyer_service_mysql
 ### 4) After code changes (Ubuntu) — force rebuild/reset
 Use this when you deployed, changed backend code, and want a clean redeploy:
 ```bash
+sed -i 's/\r$//' indus-deploy.sh
+sed -i 's/\r$//' docker-compose.yml
+chmod +x indus-deploy.sh
+
+
 ./indus-deploy.sh stop
 docker rm -f indus_auction_system_buyer_service_backend \
   indus_auction_system_buyer_service_redis \
@@ -80,3 +85,30 @@ docker image rm -f indus_auction_system_buyer_service-app 2>/dev/null || true
 - For tests or advanced usage, see `QUICK_USE.md`
 
 
+
+### 6) check
+cd /home/ubuntu/indus/be/indus_auction_system/services/buyer-service
+
+# Test the detection logic
+DB_HOST="testindus.kmsgtech.com"
+db_ip=$(getent hosts "$DB_HOST" 2>/dev/null | awk '{ print $1 }' | head -n1)
+my_public_ip=$(curl -s --connect-timeout 2 http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null)
+my_local_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+
+echo "DB_HOST=$DB_HOST"
+echo "db_ip=$db_ip"
+echo "my_public_ip=$my_public_ip"
+echo "my_local_ip=$my_local_ip"
+
+if [[ "$db_ip" == "$my_public_ip" ]] || [[ "$db_ip" == "$my_local_ip" ]]; then
+  echo "MATCH: DB is on THIS server"
+else
+  echo "NO MATCH: DB is external"
+fi
+
+# Check MySQL service
+if systemctl is-active --quiet mysql; then
+  echo "MySQL service: ACTIVE"
+else
+  echo "MySQL service: NOT ACTIVE"
+fi

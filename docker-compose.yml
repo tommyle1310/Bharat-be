@@ -34,7 +34,7 @@ services:
           cpus: "0.20"
           memory: 128M
     ports:
-      - "6381:6379"
+      - "6379:6379"
 
   app:
     build: .
@@ -50,8 +50,6 @@ services:
     env_file:
       - .env.runtime
     environment:
-      REDIS_HOST: 127.0.0.1   # thay cho 'redis'
-      REDIS_PORT: 6379
       # Use the correct container directory structure
       DATA_FILES_PATH: /app/data-files
       DIR_BUYER: buyer
@@ -60,11 +58,6 @@ services:
       - /home/ubuntu/indus/data_files:/app/data-files:rw
     # Run as specific user to avoid permission issues
     user: "1000:1000"
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_started
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:1310/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
       interval: 30s
